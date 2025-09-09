@@ -1,0 +1,26 @@
+﻿[
+  {
+    "Id": "stephansdom",
+    "Name": "St. Stephen's Cathedral",
+    "Description": "A Gothic masterpiece begun in the 12th century; symbol of Vienna with its colorful tiled roof.",
+    "Latitude": 48.20849,
+    "Longitude": 16.37312,
+    "Address": "Stephansplatz 3, 1010 Wien"
+  },
+  {
+    "Id": "hofburg",
+    "Name": "Hofburg Palace",
+    "Description": "Former imperial palace of the Habsburgs; now museums and the Austrian presidency.",
+    "Latitude": 48.20640,
+    "Longitude": 16.36499,
+    "Address": "Michaelerkuppel, 1010 Wien"
+  },
+  {
+    "Id": "belvedere",
+    "Name": "Belvedere Palace",
+    "Description": "Baroque palace complex, home to Klimt's 'The Kiss' and stunning gardens.",
+    "Latitude": 48.19130,
+    "Longitude": 16.38076,
+    "Address": "Prinz-Eugen-Straße 27, 1030 Wien"
+  }
+]
