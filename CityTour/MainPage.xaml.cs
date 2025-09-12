@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.Storage; // Preferences
 
 namespace CityTour;
 
@@ -18,13 +19,16 @@ public partial class MainPage : ContentPage
     private readonly PlaceService _service;
     private List<Place> _allPlaces = new();
 
-    // Google Places (Web) — simple, cross-platform
+    // Google Places (Web)
     private readonly HttpClient _http = new();
     private const string GooglePlacesKey = "AIzaSyD1K-t8tsPgwbQUD888Xh9kQDT5w6sWIfc";
 
     // Live suggestions
-    private readonly List<SuggestionItem> _suggestions = new();
     private CancellationTokenSource? _typeCts;
+
+    // Building selection mode
+    private bool _isSelectingBuilding = false;
+    private const string SavedBuildingsKey = "citytour.saved_buildings";
 
     public MainPage(PlaceService service)
     {
@@ -36,15 +40,24 @@ public partial class MainPage : ContentPage
     {
         base.OnAppearing();
 
-        // Load places once
+        // Load local places
         _allPlaces = _service.GetAll().ToList();
 
         // Center on Vienna
         var vienna = new Location(48.2082, 16.3738);
         Map.MoveToRegion(MapSpan.FromCenterAndRadius(vienna, Distance.FromKilometers(3)));
 
-        // Draw all pins initially
+        // Draw pins
         RefreshPins(_allPlaces);
+
+        // Map click handler (for building selection)
+        Map.MapClicked += OnMapClicked;
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        Map.MapClicked -= OnMapClicked;
     }
 
     private void RefreshPins(IEnumerable<Place> places)
@@ -69,6 +82,18 @@ public partial class MainPage : ContentPage
 
             Map.Pins.Add(pin);
         }
+
+        // Also show saved buildings
+        foreach (var b in LoadSavedBuildings())
+        {
+            Map.Pins.Add(new Pin
+            {
+                Label = $"★ {b.Name}",
+                Address = b.Address,
+                Type = PinType.Place,
+                Location = new Location(b.Latitude, b.Longitude)
+            });
+        }
     }
 
     private void ApplyFilter(string? text)
@@ -89,23 +114,18 @@ public partial class MainPage : ContentPage
     // SearchBar events
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        // Keep your local filtering
         ApplyFilter(e.NewTextValue);
 
         // Debounced Google autocomplete
         _typeCts?.Cancel();
         _typeCts = new CancellationTokenSource();
         var token = _typeCts.Token;
-
         _ = DebouncedSuggestionsAsync(e.NewTextValue, token);
     }
 
     private async Task DebouncedSuggestionsAsync(string? input, CancellationToken ct)
     {
-        try
-        {
-            await Task.Delay(250, ct); // debounce
-        }
+        try { await Task.Delay(250, ct); }
         catch (TaskCanceledException) { return; }
 
         if (string.IsNullOrWhiteSpace(input))
@@ -127,7 +147,6 @@ public partial class MainPage : ContentPage
         ResultsList.IsVisible = true;
     }
 
-    // Pressing the Search button centers & pins the best Google result
     private async void OnSearchButtonPressed(object sender, EventArgs e)
     {
         var query = Search.Text?.Trim();
@@ -141,11 +160,9 @@ public partial class MainPage : ContentPage
         ApplyFilter(query);
         ResultsList.IsVisible = false;
 
-        // Also try Google Places; if it finds a result, center & pin it
         await TryGoogleSearchAsync(query);
     }
 
-    // List selection -> center & pin that exact place
     private async void OnSuggestionSelected(object sender, SelectionChangedEventArgs e)
     {
         if (e.CurrentSelection?.FirstOrDefault() is not SuggestionItem item)
@@ -156,6 +173,84 @@ public partial class MainPage : ContentPage
         Search.Text = item.PrimaryText;
 
         await TryPlaceIdAsync(item.PlaceId);
+    }
+
+    private void OnRecenterClicked(object sender, EventArgs e)
+    {
+        var vienna = new Location(48.2082, 16.3738);
+        Map.MoveToRegion(MapSpan.FromCenterAndRadius(vienna, Distance.FromKilometers(3)));
+    }
+
+    // --- Select building flow ---
+
+    private async void OnSelectBuildingClicked(object? sender, EventArgs e)
+    {
+        _isSelectingBuilding = !_isSelectingBuilding;
+        SelectBuildingBtn.Text = _isSelectingBuilding ? "Cancel selecting" : "Select building";
+
+        if (_isSelectingBuilding)
+            await DisplayAlert("Select building",
+                "Tap a building on the map. We'll reverse-geocode it and save it for your story.",
+                "OK");
+    }
+
+    private async void OnMapClicked(object? sender, MapClickedEventArgs e)
+    {
+        if (!_isSelectingBuilding) return;
+
+        var loc = e.Location;
+        try
+        {
+            var place = await ReverseGeocodeAsync(loc.Latitude, loc.Longitude);
+            if (place is null)
+            {
+                await DisplayAlert("No building found",
+                    "Couldn’t find a nearby place for that point. Try tapping closer to a building outline.",
+                    "OK");
+                return;
+            }
+
+            var (placeId, name, address, lat, lng) = place.Value;
+
+            var confirm = await DisplayAlert("Save this building?",
+                $"{name}\n{address}", "Save", "Cancel");
+            if (!confirm) return;
+
+            // Save locally
+            var b = new SavedBuilding
+            {
+                PlaceId = placeId,
+                Name = name,
+                Address = address,
+                Latitude = lat,
+                Longitude = lng,
+                SavedAtUtc = DateTime.UtcNow
+            };
+            SaveBuilding(b);
+
+            // Show a pin immediately
+            Map.Pins.Add(new Pin
+            {
+                Label = $"★ {name}",
+                Address = address,
+                Type = PinType.Place,
+                Location = new Location(lat, lng)
+            });
+
+            _isSelectingBuilding = false;
+            SelectBuildingBtn.Text = "Select building";
+
+            // Optional confirmation
+            await DisplayAlert("Saved", "Building saved. Opening the story canvas…", "OK");
+
+            // Open the empty canvas page
+            await Navigation.PushModalAsync(new StoryCanvasPage(b.PlaceId, b.Name));
+
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlert("Selection error", ex.Message, "OK");
+        }
     }
 
     // --- Google Places helpers ---
@@ -228,7 +323,6 @@ public partial class MainPage : ContentPage
         var body = new
         {
             input = input,
-            // Bias to Vienna area; adjust if you like
             locationBias = new
             {
                 rectangle = new
@@ -244,12 +338,7 @@ public partial class MainPage : ContentPage
 
         using var resp = await _http.SendAsync(req);
         if (!resp.IsSuccessStatusCode)
-        {
-            var err = await resp.Content.ReadAsStringAsync();
-            await DisplayAlert("Google error",
-                $"HTTP {(int)resp.StatusCode}\n{err}", "OK");
-            return results;
-        }
+            return results; // Alerts are shown on explicit searches; here we fail quietly
 
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
         if (!doc.RootElement.TryGetProperty("suggestions", out var sugg) || sugg.GetArrayLength() == 0)
@@ -265,10 +354,8 @@ public partial class MainPage : ContentPage
             if (pp.TryGetProperty("text", out var t))
             {
                 primary = t.TryGetProperty("text", out var txt) ? (txt.GetString() ?? "") : "";
-                secondary = t.TryGetProperty("matches", out var _) ? "" : "";
             }
 
-            // If primary empty, skip
             if (string.IsNullOrWhiteSpace(primary)) continue;
 
             results.Add(new SuggestionItem
@@ -305,17 +392,92 @@ public partial class MainPage : ContentPage
         return (name, address, lat, lng);
     }
 
-    private void OnRecenterClicked(object sender, EventArgs e)
+    // Reverse-geocode a tapped point to the nearest place/building
+    // Find the nearest place to the tapped point (substitute for reverse geocode)
+    // Find the nearest place to the tapped point (Places API v1 "New")
+    private async Task<(string PlaceId, string Name, string Address, double Lat, double Lng)?> ReverseGeocodeAsync(double lat, double lng)
     {
-        var vienna = new Location(48.2082, 16.3738);
-        Map.MoveToRegion(MapSpan.FromCenterAndRadius(vienna, Distance.FromKilometers(3)));
+        var url = "https://places.googleapis.com/v1/places:searchNearby";
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, url);
+        req.Headers.Add("X-Goog-Api-Key", GooglePlacesKey);
+        req.Headers.Add("X-Goog-FieldMask", "places.id,places.displayName,places.formattedAddress,places.location");
+
+        var body = new
+        {
+            locationRestriction = new
+            {
+                circle = new
+                {
+                    center = new { latitude = lat, longitude = lng },
+                    radius = 50.0  // meters; tweak as needed
+                }
+            },
+            rankPreference = "DISTANCE",
+            maxResultCount = 1,
+            languageCode = "en",
+            regionCode = "AT"
+            // ⛔ No includedTypes here — legacy types like "establishment" will 400
+        };
+
+        req.Content = new StringContent(JsonSerializer.Serialize(body),
+            System.Text.Encoding.UTF8, "application/json");
+
+        using var resp = await _http.SendAsync(req);
+        var payload = await resp.Content.ReadAsStringAsync();
+        if (!resp.IsSuccessStatusCode)
+            throw new Exception($"Nearby search failed {(int)resp.StatusCode}: {payload}");
+
+        using var doc = JsonDocument.Parse(payload);
+        if (!doc.RootElement.TryGetProperty("places", out var arr) || arr.GetArrayLength() == 0)
+            return null;
+
+        var p = arr[0];
+        var id = p.GetProperty("id").GetString() ?? "";
+        var name = p.TryGetProperty("displayName", out var dn) && dn.TryGetProperty("text", out var txt)
+            ? txt.GetString() ?? "(Place)" : "(Place)";
+        var address = p.TryGetProperty("formattedAddress", out var a) ? a.GetString() ?? "" : "";
+        var loc = p.GetProperty("location");
+        var plat = loc.GetProperty("latitude").GetDouble();
+        var plng = loc.GetProperty("longitude").GetDouble();
+
+        return (id, name, address, plat, plng);
     }
 
-    // Simple DTO for suggestions
+
+    // --- Persistence of saved buildings ---
+
+    private void SaveBuilding(SavedBuilding b)
+    {
+        var list = LoadSavedBuildings();
+        list.Add(b);
+        var json = JsonSerializer.Serialize(list);
+        Preferences.Set(SavedBuildingsKey, json);
+    }
+
+    private List<SavedBuilding> LoadSavedBuildings()
+    {
+        var json = Preferences.Get(SavedBuildingsKey, "");
+        if (string.IsNullOrWhiteSpace(json)) return new List<SavedBuilding>();
+        try { return JsonSerializer.Deserialize<List<SavedBuilding>>(json) ?? new List<SavedBuilding>(); }
+        catch { return new List<SavedBuilding>(); }
+    }
+
+    // DTOs
     private sealed class SuggestionItem
     {
         public string PlaceId { get; set; } = "";
         public string PrimaryText { get; set; } = "";
         public string SecondaryText { get; set; } = "";
+    }
+
+    private sealed class SavedBuilding
+    {
+        public string PlaceId { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Address { get; set; } = "";
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+        public DateTime SavedAtUtc { get; set; }
     }
 }
