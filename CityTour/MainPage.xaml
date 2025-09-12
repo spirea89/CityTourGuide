@@ -1,39 +1,45 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:maps="clr-namespace:Microsoft.Maui.Controls.Maps;assembly=Microsoft.Maui.Controls.Maps"
-             x:Class="CityTour.MainPage"
-             Title="City Map">
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="CityTour.MainPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:maps="clr-namespace:Microsoft.Maui.Controls.Maps;assembly=Microsoft.Maui.Controls.Maps">
 
-    <Grid RowDefinitions="Auto,Auto,*">
-        <!-- Header -->
-        <Grid Padding="12" BackgroundColor="{StaticResource Primary}">
-            <Label Text="CityTour" TextColor="White" FontSize="24" FontAttributes="Bold"/>
-        </Grid>
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Padding="12" RowSpacing="8">
 
-        <!-- Search -->
-        <Grid Grid.Row="1" Padding="12" BackgroundColor="White">
-            <SearchBar x:Name="Search"
-                       Placeholder="Search buildings..."
-                       TextChanged="OnSearchTextChanged"
-                       SearchButtonPressed="OnSearchButtonPressed"/>
-        </Grid>
+        <!-- Search bar -->
+        <SearchBar x:Name="Search"
+                   Placeholder="Search places or addresses"
+                   SearchButtonPressed="OnSearchButtonPressed"
+                   TextChanged="OnSearchTextChanged" />
+
+        <!-- Live suggestions list (appears while typing) -->
+        <CollectionView x:Name="ResultsList"
+                        Grid.Row="1"
+                        HeightRequest="160"
+                        IsVisible="False"
+                        SelectionMode="Single"
+                        SelectionChanged="OnSuggestionSelected">
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Grid Padding="10" ColumnDefinitions="*">
+                        <Label Text="{Binding PrimaryText}"
+                               FontAttributes="Bold" />
+                        <Label Text="{Binding SecondaryText}"
+                               Grid.Row="1"
+                               FontSize="12"
+                               TextColor="{DynamicResource SecondaryTextColor}" />
+                    </Grid>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
 
         <!-- Map -->
-        <Grid Grid.Row="2">
-            <maps:Map x:Name="Map" MapType="Street" IsShowingUser="true"/>
+        <maps:Map x:Name="Map" Grid.Row="2" />
 
-            <!-- NEW: Recenter button overlay -->
-            <Button Text="⟳"
-                    WidthRequest="48"
-                    HeightRequest="48"
-                    CornerRadius="24"
-                    VerticalOptions="End"
-                    HorizontalOptions="End"
-                    Margin="16"
-                    BackgroundColor="{StaticResource Accent}"
-                    TextColor="White"
-                    Clicked="OnRecenterClicked"/>
-        </Grid>
+        <!-- Recenter -->
+        <Button Grid.Row="3"
+                Text="Recenter to Vienna"
+                Clicked="OnRecenterClicked" />
     </Grid>
 </ContentPage>
