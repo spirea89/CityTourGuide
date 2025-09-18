@@ -5,6 +5,7 @@ using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Media;
 using System.Linq;
+using System.Reflection;
 
 namespace CityTour;
 
@@ -166,8 +167,8 @@ public partial class StoryCanvasPage : ContentPage
         {
             var locales = await TextToSpeech.Default.GetLocalesAsync();
             var options = locales
-                .OrderBy(locale => locale.DisplayName ?? locale.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(locale => locale.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(locale => GetLocaleSortKey(locale), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(locale => GetLocaleName(locale) ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .Select(locale => new LocaleOption(locale))
                 .ToList();
 
@@ -335,6 +336,49 @@ public partial class StoryCanvasPage : ContentPage
         return VoicePicker.SelectedItem is LocaleOption option ? option.Locale : null;
     }
 
+    private static string GetLocaleSortKey(Locale locale)
+    {
+        return GetLocaleDisplayName(locale)
+            ?? GetLocaleName(locale)
+            ?? GetLocaleLanguage(locale)
+            ?? locale.ToString()
+            ?? string.Empty;
+    }
+
+    private static string? GetLocaleDisplayName(Locale locale)
+    {
+        return GetLocalePropertyValue(locale, "DisplayName", "Description", "Label");
+    }
+
+    private static string? GetLocaleName(Locale locale)
+    {
+        return GetLocalePropertyValue(locale, "Name", "LocaleName", "Identifier", "Id");
+    }
+
+    private static string? GetLocaleLanguage(Locale locale)
+    {
+        return GetLocalePropertyValue(locale, "Language", "LanguageCode");
+    }
+
+    private static string? GetLocalePropertyValue(Locale locale, params string[] propertyNames)
+    {
+        var localeType = locale.GetType();
+        foreach (var propertyName in propertyNames)
+        {
+            var property = localeType.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
+            if (property?.GetValue(locale) is { } value)
+            {
+                var text = value.ToString();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+        }
+
+        return null;
+    }
+
     private string GetCategoryDisplayName(StoryCategory category)
     {
         foreach (var option in _categoryOptions)
@@ -373,18 +417,19 @@ public partial class StoryCanvasPage : ContentPage
 
         private static string BuildDisplayName(Locale locale)
         {
-            var display = locale.DisplayName;
-            var name = locale.Name;
+            var display = GetLocaleDisplayName(locale);
+            var name = GetLocaleName(locale);
 
             if (string.IsNullOrWhiteSpace(display))
             {
+                var language = GetLocaleLanguage(locale);
                 return string.IsNullOrWhiteSpace(name)
-                    ? locale.Language ?? "Unknown"
-                    : name;
+                    ? string.IsNullOrWhiteSpace(language) ? "Unknown" : language!
+                    : name!;
             }
 
             return string.IsNullOrWhiteSpace(name)
-                ? display
+                ? display!
                 : $"{display} ({name})";
         }
     }
