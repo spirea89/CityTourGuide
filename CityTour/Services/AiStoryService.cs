@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using CityTour.Models;
 using Microsoft.Maui.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -8,7 +9,11 @@ namespace CityTour.Services;
 
 public interface IAiStoryService
 {
-    Task<string> GenerateStoryAsync(string buildingName, string? buildingAddress, CancellationToken cancellationToken = default);
+    Task<string> GenerateStoryAsync(
+        string buildingName,
+        string? buildingAddress,
+        StoryCategory category,
+        CancellationToken cancellationToken = default);
 }
 
 public class AiStoryService : IAiStoryService
@@ -28,7 +33,11 @@ public class AiStoryService : IAiStoryService
         _model = Preferences.Get("ai.story.model", DefaultModel);
     }
 
-    public async Task<string> GenerateStoryAsync(string buildingName, string? buildingAddress, CancellationToken cancellationToken = default)
+    public async Task<string> GenerateStoryAsync(
+        string buildingName,
+        string? buildingAddress,
+        StoryCategory category,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(buildingName))
         {
@@ -41,7 +50,7 @@ public class AiStoryService : IAiStoryService
             throw new InvalidOperationException("No OpenAI API key configured. Set the OPENAI_API_KEY environment variable or save it in Preferences under 'ai.story.apikey'.");
         }
 
-        var prompt = BuildPrompt(buildingName, buildingAddress);
+        var prompt = BuildPrompt(buildingName, buildingAddress, category);
 
         var payload = new
         {
@@ -96,15 +105,44 @@ public class AiStoryService : IAiStoryService
         }
     }
 
-    private string BuildPrompt(string buildingName, string? buildingAddress)
+    private string BuildPrompt(string buildingName, string? buildingAddress, StoryCategory category)
     {
         var addressPart = string.IsNullOrWhiteSpace(buildingAddress)
             ? string.Empty
             : $" located at {buildingAddress}";
 
-        var prompt = $"Write an engaging four-paragraph story about the building called \"{buildingName}\"{addressPart}. " +
-                     "Blend historical facts, cultural impact, and vivid sensory details so tourists feel immersed. " +
-                     "Keep the tone warm and welcoming, and aim for 4-6 sentences per paragraph.";
+        var (focusInstruction, toneInstruction, structureInstruction) = category switch
+        {
+            StoryCategory.History => (
+                "Concentrate on the building's historical background, important events, and the evolution of its role in the city.",
+                "Keep the tone warm and welcoming while weaving in vivid sensory details rooted in real history.",
+                "Aim for four paragraphs with 4-6 sentences each."
+            ),
+            StoryCategory.Personalities => (
+                "Highlight the notable people linked to the building and share the human stories that connect them to this place.",
+                "Keep the tone warm, welcoming, and conversational, as if guiding visitors through personal anecdotes.",
+                "Aim for four paragraphs with 4-6 sentences each."
+            ),
+            StoryCategory.Architecture => (
+                "Focus on the building's architectural style, materials, design innovations, and what it feels like to experience the space.",
+                "Use descriptive language that helps visitors visualize textures, shapes, and craftsmanship while staying inviting.",
+                "Aim for four paragraphs with 4-6 sentences each."
+            ),
+            StoryCategory.Kids => (
+                "Explain the building's story in friendly, easy-to-understand language suited for children around ages 8-12, and include what makes it exciting or special to them.",
+                "Keep the tone playful and encouraging, add two or three fun facts or imaginative comparisons, and avoid complex vocabulary.",
+                "Write three short paragraphs with 3-4 sentences each."
+            ),
+            _ => (
+                "Blend historical facts, cultural impact, and vivid sensory details so tourists feel immersed.",
+                "Keep the tone warm and welcoming.",
+                "Aim for four paragraphs with 4-6 sentences each."
+            )
+        };
+
+        var prompt = $"Write an engaging story about the building called \"{buildingName}\"{addressPart}. " +
+                     $"{focusInstruction} {toneInstruction} {structureInstruction} " +
+                     "If any details are uncertain, acknowledge the uncertainty instead of inventing facts.";
 
         return prompt;
     }
