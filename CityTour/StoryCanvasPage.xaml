@@ -5,7 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     Padding="16">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" RowSpacing="12">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" RowSpacing="12">
 
         <Label Text="New story"
                FontSize="22"
@@ -17,7 +17,17 @@
                LineBreakMode="WordWrap"
                TextColor="{AppThemeBinding Light=#666, Dark=#AAA}" />
 
-        <Grid Grid.Row="2"
+        <StackLayout Grid.Row="2"
+                     Spacing="4">
+            <Label Text="Story focus"
+                   FontAttributes="Bold"
+                   FontSize="14" />
+            <Picker x:Name="CategoryPicker"
+                    Title="Choose a category"
+                    SelectedIndexChanged="OnCategoryChanged" />
+        </StackLayout>
+
+        <Grid Grid.Row="3"
               ColumnDefinitions="Auto,*"
               ColumnSpacing="8">
             <ActivityIndicator x:Name="LoadingIndicator"
@@ -31,16 +41,16 @@
         </Grid>
 
         <Editor x:Name="StoryEditor"
-                Grid.Row="3"
-                Placeholder="Write the historical information here..."
+                Grid.Row="4"
+                Placeholder="Tweak or add your own notes here..."
                 AutoSize="TextChanges" />
 
         <Button x:Name="RegenerateButton"
-                Grid.Row="4"
+                Grid.Row="5"
                 Text="Regenerate story"
                 Clicked="OnRegenerateClicked" />
 
-        <Button Grid.Row="5"
+        <Button Grid.Row="6"
                 Text="Close"
                 Clicked="OnCloseClicked" />
     </Grid>
