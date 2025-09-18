@@ -74,8 +74,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Compile Update="StoryCanvasPage..xaml.cs">
-	    <DependentUpon>StoryCanvasPage..xaml</DependentUpon>
+          <Compile Update="StoryCanvasPage.xaml.cs">
+            <DependentUpon>StoryCanvasPage.xaml</DependentUpon>
 	  </Compile>
 	  <Compile Update="Views\DetailPage.xaml.cs">
 	    <DependentUpon>DetailPage.xaml</DependentUpon>
@@ -83,7 +83,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <MauiXaml Update="StoryCanvasPage..xaml">
+          <MauiXaml Update="StoryCanvasPage.xaml">
 	    <Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	  <MauiXaml Update="Views\DetailPage.xaml">

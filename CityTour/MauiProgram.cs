@@ -1,5 +1,6 @@
-using Microsoft.Maui.Controls.Maps;
+using System.Net.Http;
 using CityTour.Services;
+using Microsoft.Maui.Controls.Maps;
 
 namespace CityTour;
 
@@ -17,8 +18,9 @@ public static class MauiProgram
                 fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
             });
 
+        builder.Services.AddSingleton<HttpClient>(_ => new HttpClient());
         builder.Services.AddSingleton<Services.PlaceService>();
-        builder.Services.AddHttpClient<IAiStoryService, AiStoryService>();
+        builder.Services.AddSingleton<IAiStoryService, AiStoryService>();
         builder.Services.AddSingleton<MainPage>();
         builder.Services.AddTransient<Views.DetailPage>();
 
