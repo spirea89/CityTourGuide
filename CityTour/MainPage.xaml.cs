@@ -297,6 +297,9 @@ public partial class MainPage : ContentPage
                 Type = PinType.Place,
                 Location = loc
             });
+
+            await Navigation.PushModalAsync(
+                new StoryCanvasPage(placeId, place.Value.Name, place.Value.Address, _storyService));
         }
         catch (Exception ex)
         {
