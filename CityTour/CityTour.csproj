@@ -41,6 +41,12 @@
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'tizen'">6.5</SupportedOSPlatformVersion>
 	</PropertyGroup>
 
+	<PropertyGroup Condition="'$(RunConfiguration)'=='Default'">
+	  <EnvironmentVariables>
+			<Variable name="OPENAI_API_KEY" value="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" />
+		</EnvironmentVariables>
+	</PropertyGroup>
+
 	<ItemGroup>
 		<!-- App Icon -->
 		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />

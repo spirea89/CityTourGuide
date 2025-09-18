@@ -1,6 +1,7 @@
 using System.Net.Http;
 using CityTour.Services;
 using Microsoft.Maui.Controls.Maps;
+using Microsoft.Maui.Storage;
 
 namespace CityTour;
 
@@ -23,7 +24,8 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAiStoryService, AiStoryService>();
         builder.Services.AddSingleton<MainPage>();
         builder.Services.AddTransient<Views.DetailPage>();
-
+        // …
+        Preferences.Set("ai.story.apikey", "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");
         return builder.Build();
     }
 }

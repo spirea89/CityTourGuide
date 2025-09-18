@@ -22,7 +22,7 @@ public partial class MainPage : ContentPage
 
     // Google Places (Web)
     private readonly HttpClient _http = new();
-    private const string GooglePlacesKey = "AIzaSyD1K-t8tsPgwbQUD888Xh9kQDT5w6sWIfc";
+    private const string GooglePlacesKey = "AIzaSyBmlEatUTKXgQ9NCgYyHWGn0o7p4JPBw0I";
 
     // Live suggestions
     private CancellationTokenSource? _typeCts;
