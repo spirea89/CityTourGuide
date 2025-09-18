@@ -1,5 +1,4 @@
 using System;
-using System.Net.Http;
 using CityTour.Services;
 using Microsoft.Maui.Controls.Maps;
 using Microsoft.Maui.Handlers;
@@ -24,11 +23,10 @@ public static class MauiProgram
                 fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
             });
 
-        builder.Services.AddSingleton<HttpClient>(_ => new HttpClient());
-        builder.Services.AddSingleton<Services.PlaceService>();
-        builder.Services.AddSingleton<IAiStoryService, AiStoryService>();
-        builder.Services.AddSingleton<MainPage>();
-        builder.Services.AddTransient<Views.DetailPage>();
+        builder.Services
+            .AddAstonovationServices(builder.Configuration)
+            .AddCitySettings(builder.Configuration)
+            .AddPreferences();
 
 #if WINDOWS
         MapHandler.Mapper.AppendToMapping("ScrollWheelZoom", (handler, view) =>
