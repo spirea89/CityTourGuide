@@ -22,7 +22,7 @@ public partial class MainPage : ContentPage
 
     // Google Places (Web)
     private readonly HttpClient _http = new();
-    private const string GooglePlacesKey = "AIzaSyBmlEatUTKXgQ9NCgYyHWGn0o7p4JPBw0I";
+    private const string GooglePlacesKey = "AIzaSyD1K-t8tsPgwbQUD888Xh9kQDT5w6sWIfc";
 
     // Live suggestions
     private CancellationTokenSource? _typeCts;
@@ -297,9 +297,6 @@ public partial class MainPage : ContentPage
                 Type = PinType.Place,
                 Location = loc
             });
-
-            await Navigation.PushModalAsync(
-                new StoryCanvasPage(placeId, place.Value.Name, place.Value.Address, _storyService));
         }
         catch (Exception ex)
         {
