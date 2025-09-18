@@ -1,4 +1,5 @@
-﻿using Microsoft.Maui.Controls.Maps;
+using Microsoft.Maui.Controls.Maps;
+using CityTour.Services;
 
 namespace CityTour;
 
@@ -17,6 +18,7 @@ public static class MauiProgram
             });
 
         builder.Services.AddSingleton<Services.PlaceService>();
+        builder.Services.AddHttpClient<IAiStoryService, AiStoryService>();
         builder.Services.AddSingleton<MainPage>();
         builder.Services.AddTransient<Views.DetailPage>();
 

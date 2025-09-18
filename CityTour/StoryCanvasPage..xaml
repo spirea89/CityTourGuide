@@ -5,7 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     Padding="16">
 
-    <Grid RowDefinitions="Auto,Auto,* ,Auto" RowSpacing="12">
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" RowSpacing="12">
 
         <Label Text="New story"
                FontSize="22"
@@ -14,14 +14,33 @@
         <Label x:Name="BuildingNameLabel"
                Grid.Row="1"
                FontSize="14"
+               LineBreakMode="WordWrap"
                TextColor="{AppThemeBinding Light=#666, Dark=#AAA}" />
 
+        <Grid Grid.Row="2"
+              ColumnDefinitions="Auto,*"
+              ColumnSpacing="8">
+            <ActivityIndicator x:Name="LoadingIndicator"
+                                VerticalOptions="Center"
+                                IsVisible="False"
+                                IsRunning="False" />
+            <Label x:Name="StatusLabel"
+                   VerticalOptions="Center"
+                   LineBreakMode="WordWrap"
+                   TextColor="{AppThemeBinding Light=#555, Dark=#CCC}" />
+        </Grid>
+
         <Editor x:Name="StoryEditor"
-                Grid.Row="2"
+                Grid.Row="3"
                 Placeholder="Write the historical information here..."
                 AutoSize="TextChanges" />
 
-        <Button Grid.Row="3"
+        <Button x:Name="RegenerateButton"
+                Grid.Row="4"
+                Text="Regenerate story"
+                Clicked="OnRegenerateClicked" />
+
+        <Button Grid.Row="5"
                 Text="Close"
                 Clicked="OnCloseClicked" />
     </Grid>
