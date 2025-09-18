@@ -17,6 +17,7 @@ namespace CityTour;
 public partial class MainPage : ContentPage
 {
     private readonly PlaceService _service;
+    private readonly IAiStoryService _storyService;
     private List<Place> _allPlaces = new();
 
     // Google Places (Web)
@@ -30,10 +31,11 @@ public partial class MainPage : ContentPage
     private bool _isSelectingBuilding = false;
     private const string SavedBuildingsKey = "citytour.saved_buildings";
 
-    public MainPage(PlaceService service)
+    public MainPage(PlaceService service, IAiStoryService storyService)
     {
         InitializeComponent();
         _service = service;
+        _storyService = storyService;
     }
 
     protected override void OnAppearing()
@@ -244,7 +246,7 @@ public partial class MainPage : ContentPage
             await DisplayAlert("Saved", "Building saved. Opening the story canvas…", "OK");
 
             // Open the empty canvas page
-            await Navigation.PushModalAsync(new StoryCanvasPage(b.PlaceId, b.Name));
+            await Navigation.PushModalAsync(new StoryCanvasPage(b.PlaceId, b.Name, b.Address, _storyService));
 
         }
         catch (Exception ex)
