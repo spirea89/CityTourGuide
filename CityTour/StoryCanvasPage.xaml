@@ -5,7 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     Padding="16">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" RowSpacing="12">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto" RowSpacing="12">
 
         <Label Text="New story"
                FontSize="22"
@@ -45,12 +45,35 @@
                 Placeholder="Tweak or add your own notes here..."
                 AutoSize="TextChanges" />
 
+        <StackLayout Grid.Row="5"
+                     Spacing="4">
+            <Label Text="Voice"
+                   FontAttributes="Bold"
+                   FontSize="14" />
+            <Picker x:Name="VoicePicker"
+                    Title="Choose a voice"
+                    ItemDisplayBinding="{Binding DisplayName}" />
+        </StackLayout>
+
+        <Grid Grid.Row="6"
+              ColumnDefinitions="*,*"
+              ColumnSpacing="8">
+            <Button x:Name="ListenButton"
+                    Text="Listen"
+                    Clicked="OnListenClicked" />
+            <Button x:Name="StopButton"
+                    Grid.Column="1"
+                    Text="Stop"
+                    IsEnabled="False"
+                    Clicked="OnStopClicked" />
+        </Grid>
+
         <Button x:Name="RegenerateButton"
-                Grid.Row="5"
+                Grid.Row="7"
                 Text="Regenerate story"
                 Clicked="OnRegenerateClicked" />
 
-        <Button Grid.Row="6"
+        <Button Grid.Row="8"
                 Text="Close"
                 Clicked="OnCloseClicked" />
     </Grid>
