@@ -3,6 +3,8 @@ using CityTour.Models;
 using CityTour.Services;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.Media;
+using System.Linq;
 
 namespace CityTour;
 
@@ -23,6 +25,11 @@ public partial class StoryCanvasPage : ContentPage
         new("Architecture", StoryCategory.Architecture),
         new("Kids", StoryCategory.Kids)
     };
+    private CancellationTokenSource? _speechCts;
+    private bool _isSpeaking;
+    private bool _isLoadingVoices;
+    private bool _hasAttemptedVoiceLoad;
+    private List<LocaleOption> _voiceOptions = new();
 
     public StoryCanvasPage(string placeId, string buildingName, string buildingAddress, IAiStoryService storyService)
     {
@@ -42,11 +49,15 @@ public partial class StoryCanvasPage : ContentPage
         StatusLabel.Text = $"Preparing {GetCategoryDisplayName(_selectedCategory)} story…";
         RegenerateButton.IsEnabled = false;
         UpdateRegenerateButtonText();
+
+        StoryEditor.TextChanged += OnStoryTextChanged;
+        UpdateAudioControls();
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        _ = EnsureVoiceOptionsAsync();
         if (_hasTriggeredInitialGeneration)
         {
             return;
@@ -60,6 +71,7 @@ public partial class StoryCanvasPage : ContentPage
     {
         base.OnDisappearing();
         _generationCts?.Cancel();
+        CancelSpeech();
     }
 
     private async Task GenerateStoryAsync(bool userInitiated = false)
@@ -67,6 +79,8 @@ public partial class StoryCanvasPage : ContentPage
         _generationCts?.Cancel();
         var cts = new CancellationTokenSource();
         _generationCts = cts;
+
+        CancelSpeech();
 
         var category = _selectedCategory;
         var categoryLabel = GetCategoryDisplayName(category);
@@ -135,7 +149,52 @@ public partial class StoryCanvasPage : ContentPage
     private async void OnCloseClicked(object? sender, EventArgs e)
     {
         _generationCts?.Cancel();
+        CancelSpeech();
         await Navigation.PopModalAsync();
+    }
+
+    private async Task EnsureVoiceOptionsAsync()
+    {
+        if (_hasAttemptedVoiceLoad || _isLoadingVoices)
+        {
+            return;
+        }
+
+        _isLoadingVoices = true;
+
+        try
+        {
+            var locales = await TextToSpeech.Default.GetLocalesAsync();
+            var options = locales
+                .OrderBy(locale => locale.DisplayName ?? locale.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(locale => locale.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .Select(locale => new LocaleOption(locale))
+                .ToList();
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                _voiceOptions = options;
+                VoicePicker.ItemsSource = _voiceOptions;
+                if (_voiceOptions.Count > 0)
+                {
+                    VoicePicker.SelectedIndex = 0;
+                }
+
+                UpdateAudioControls();
+            });
+        }
+        catch (Exception ex)
+        {
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                await DisplayAlert("Text-to-speech unavailable", ex.Message, "OK");
+            });
+        }
+        finally
+        {
+            _hasAttemptedVoiceLoad = true;
+            _isLoadingVoices = false;
+        }
     }
 
     private void ConfigureCategoryPicker()
@@ -179,6 +238,103 @@ public partial class StoryCanvasPage : ContentPage
         RegenerateButton.Text = $"Regenerate {label} story";
     }
 
+    private void OnStoryTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        UpdateAudioControls();
+    }
+
+    private async void OnListenClicked(object? sender, EventArgs e)
+    {
+        var text = StoryEditor.Text;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            await DisplayAlert("Story unavailable", "There's no story to read right now.", "OK");
+            return;
+        }
+
+        SpeechOptions? options = null;
+        var locale = GetSelectedLocale();
+        if (locale is not null)
+        {
+            options = new SpeechOptions
+            {
+                Locale = locale
+            };
+        }
+
+        CancelSpeech();
+
+        var cts = new CancellationTokenSource();
+        _speechCts = cts;
+
+        try
+        {
+            await SetIsSpeakingAsync(true);
+            await TextToSpeech.Default.SpeakAsync(text, options, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // ignored
+        }
+        catch (Exception ex)
+        {
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                await DisplayAlert("Text-to-speech failed", ex.Message, "OK");
+            });
+        }
+        finally
+        {
+            if (ReferenceEquals(_speechCts, cts))
+            {
+                _speechCts = null;
+                await SetIsSpeakingAsync(false);
+            }
+
+            cts.Dispose();
+        }
+    }
+
+    private void OnStopClicked(object? sender, EventArgs e)
+    {
+        CancelSpeech();
+    }
+
+    private Task SetIsSpeakingAsync(bool isSpeaking)
+    {
+        return MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            _isSpeaking = isSpeaking;
+            UpdateAudioControls();
+        });
+    }
+
+    private void UpdateAudioControls()
+    {
+        var hasText = !string.IsNullOrWhiteSpace(StoryEditor.Text);
+        ListenButton.IsEnabled = !_isSpeaking && hasText;
+        StopButton.IsEnabled = _isSpeaking;
+        VoicePicker.IsEnabled = !_isSpeaking && _voiceOptions.Count > 0;
+    }
+
+    private void CancelSpeech()
+    {
+        if (_speechCts is null)
+        {
+            return;
+        }
+
+        if (!_speechCts.IsCancellationRequested)
+        {
+            _speechCts.Cancel();
+        }
+    }
+
+    private Locale? GetSelectedLocale()
+    {
+        return VoicePicker.SelectedItem is LocaleOption option ? option.Locale : null;
+    }
+
     private string GetCategoryDisplayName(StoryCategory category)
     {
         foreach (var option in _categoryOptions)
@@ -202,5 +358,34 @@ public partial class StoryCanvasPage : ContentPage
 
         public string DisplayName { get; }
         public StoryCategory Category { get; }
+    }
+
+    private sealed class LocaleOption
+    {
+        public LocaleOption(Locale locale)
+        {
+            Locale = locale;
+            DisplayName = BuildDisplayName(locale);
+        }
+
+        public Locale Locale { get; }
+        public string DisplayName { get; }
+
+        private static string BuildDisplayName(Locale locale)
+        {
+            var display = locale.DisplayName;
+            var name = locale.Name;
+
+            if (string.IsNullOrWhiteSpace(display))
+            {
+                return string.IsNullOrWhiteSpace(name)
+                    ? locale.Language ?? "Unknown"
+                    : name;
+            }
+
+            return string.IsNullOrWhiteSpace(name)
+                ? display
+                : $"{display} ({name})";
+        }
     }
 }
