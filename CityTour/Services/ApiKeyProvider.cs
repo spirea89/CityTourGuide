@@ -50,7 +50,12 @@ public class ApiKeyProvider : IApiKeyProvider
     {
         try
         {
-            using var stream = FileSystem.OpenAppPackageFileAsync(fileName).GetAwaiter().GetResult();
+            using var stream = TryOpenSecretsStream(fileName);
+            if (stream is null)
+            {
+                return null;
+            }
+
             using var reader = new StreamReader(stream);
             var json = reader.ReadToEnd();
 
@@ -67,14 +72,6 @@ public class ApiKeyProvider : IApiKeyProvider
             }
             return payload;
         }
-        catch (FileNotFoundException)
-        {
-            return null;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return null;
-        }
         catch (JsonException ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to parse {fileName}: {ex.Message}");
@@ -85,6 +82,135 @@ public class ApiKeyProvider : IApiKeyProvider
             System.Diagnostics.Debug.WriteLine($"Failed to load {fileName}: {ex.Message}");
             return null;
         }
+    }
+
+    private static Stream? TryOpenSecretsStream(string fileName)
+    {
+        try
+        {
+            return FileSystem.OpenAppPackageFileAsync(fileName).GetAwaiter().GetResult();
+        }
+        catch (FileNotFoundException)
+        {
+            // Continue to probe other locations.
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // Continue to probe other locations.
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to open '{fileName}' from packaged assets: {ex.Message}");
+        }
+
+        foreach (var path in EnumerateFallbackFilePaths(fileName))
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"Loading API key bundle from '{path}'.");
+                return File.OpenRead(path);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to open fallback key file '{path}': {ex.Message}");
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> EnumerateFallbackFilePaths(string fileName)
+    {
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var root in EnumerateCandidateDirectories())
+        {
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                continue;
+            }
+
+            foreach (var relative in EnumerateRelativeSearchRoots())
+            {
+                var path = relative.Length == 0
+                    ? Path.Combine(root, fileName)
+                    : Path.Combine(root, relative, fileName);
+
+                if (!visited.Add(path) || !File.Exists(path))
+                {
+                    continue;
+                }
+
+                yield return path;
+            }
+        }
+    }
+
+    private static IEnumerable<string> EnumerateCandidateDirectories()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var root in new[] { NormalizeDirectory(AppContext.BaseDirectory), NormalizeDirectory(Environment.CurrentDirectory) })
+        {
+            foreach (var directory in EnumerateSelfAndParents(root))
+            {
+                if (seen.Add(directory))
+                {
+                    yield return directory;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<string> EnumerateSelfAndParents(string? start)
+    {
+        var current = start;
+        while (!string.IsNullOrEmpty(current))
+        {
+            yield return current;
+
+            string? parent = null;
+            try
+            {
+                parent = Directory.GetParent(current)?.FullName;
+            }
+            catch
+            {
+                yield break;
+            }
+
+            if (string.IsNullOrEmpty(parent))
+            {
+                yield break;
+            }
+
+            current = parent;
+        }
+    }
+
+    private static string? NormalizeDirectory(string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetFullPath(directory);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static IEnumerable<string> EnumerateRelativeSearchRoots()
+    {
+        yield return Path.Combine("Resources", "Raw");
+        yield return "Resources";
+        yield return "Raw";
+        yield return string.Empty;
     }
 
     private static string? Normalize(string? value)
