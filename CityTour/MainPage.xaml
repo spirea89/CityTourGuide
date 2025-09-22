@@ -5,6 +5,11 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:maps="clr-namespace:Microsoft.Maui.Controls.Maps;assembly=Microsoft.Maui.Controls.Maps">
 
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Clear stories"
+                     Clicked="OnClearStoriesClicked" />
+    </ContentPage.ToolbarItems>
+
     <Grid RowDefinitions="Auto,Auto,*,Auto" Padding="12" RowSpacing="8">
 
         <!-- Search bar -->
