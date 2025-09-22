@@ -39,9 +39,9 @@ public class AiStoryService : IAiStoryService
         StoryCategory category,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(buildingName))
+        if (string.IsNullOrWhiteSpace(buildingName) && string.IsNullOrWhiteSpace(buildingAddress))
         {
-            throw new ArgumentException("Building name is required.", nameof(buildingName));
+            throw new ArgumentException("A building name or address is required.", nameof(buildingName));
         }
 
         var key = ResolveApiKey();
@@ -140,8 +140,9 @@ public class AiStoryService : IAiStoryService
 
         if (!string.IsNullOrWhiteSpace(buildingAddress))
         {
-            promptBuilder.Append($"Write an engaging story about the building tied to the exact street address \"{buildingAddress}\". ");
-            promptBuilder.Append($"The location is currently known as \"{buildingName}\", but base the story on everything historically connected to that address, no matter the building's past or present purpose. ");
+            promptBuilder.Append($"Write an engaging story about the building located at the exact street address \"{buildingAddress}\". ");
+            promptBuilder.Append("Base the narrative on everything historically connected to that address, no matter the building's past or present purpose. ");
+            promptBuilder.Append("Do not include modern marketing or attraction names for the site unless they are historically essential; keep the focus on the street address as the visitor's reference point. ");
             promptBuilder.Append("Use that precise street and number as the anchor when recalling earlier names, occupants, or notable events linked to the site, and mention them when relevant. ");
         }
         else
