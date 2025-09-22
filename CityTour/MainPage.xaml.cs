@@ -18,11 +18,11 @@ public partial class MainPage : ContentPage
 {
     private readonly PlaceService _service;
     private readonly IAiStoryService _storyService;
+    private readonly IApiKeyProvider _apiKeys;
     private List<Place> _allPlaces = new();
 
     // Google Places (Web)
     private readonly HttpClient _http = new();
-    private const string GooglePlacesKey = "AIzaSyD1K-t8tsPgwbQUD888Xh9kQDT5w6sWIfc";
 
     // Live suggestions
     private CancellationTokenSource? _typeCts;
@@ -31,11 +31,12 @@ public partial class MainPage : ContentPage
     private bool _isSelectingBuilding = false;
     private const string SavedBuildingsKey = "citytour.saved_buildings";
 
-    public MainPage(PlaceService service, IAiStoryService storyService)
+    public MainPage(PlaceService service, IAiStoryService storyService, IApiKeyProvider apiKeyProvider)
     {
         InitializeComponent();
         _service = service;
         _storyService = storyService;
+        _apiKeys = apiKeyProvider;
     }
 
     protected override void OnAppearing()
@@ -137,7 +138,18 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        var items = await GetAutocompleteAsync(input);
+        List<SuggestionItem> items;
+        try
+        {
+            items = await GetAutocompleteAsync(input);
+        }
+        catch (InvalidOperationException ex)
+        {
+            await DisplayAlert("Configuration error", ex.Message, "OK");
+            ResultsList.IsVisible = false;
+            ResultsList.ItemsSource = null;
+            return;
+        }
         if (items.Count == 0)
         {
             ResultsList.IsVisible = false;
@@ -283,6 +295,18 @@ public partial class MainPage : ContentPage
 
     // --- Google Places helpers ---
 
+    private string GetGooglePlacesKey()
+    {
+        var key = _apiKeys.GooglePlacesApiKey;
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            throw new InvalidOperationException(
+                "Google Places API key is not configured. Copy Resources/Raw/api_keys.example.json to api_keys.json and add your key.");
+        }
+
+        return key;
+    }
+
     private async Task TryGoogleSearchAsync(string input)
     {
         try
@@ -343,8 +367,10 @@ public partial class MainPage : ContentPage
 
         var url = "https://places.googleapis.com/v1/places:autocomplete";
 
+        var apiKey = GetGooglePlacesKey();
+
         using var req = new HttpRequestMessage(HttpMethod.Post, url);
-        req.Headers.Add("X-Goog-Api-Key", GooglePlacesKey);
+        req.Headers.Add("X-Goog-Api-Key", apiKey);
         req.Headers.Add("X-Goog-FieldMask",
             "suggestions.placePrediction.placeId,suggestions.placePrediction.text");
 
@@ -399,7 +425,8 @@ public partial class MainPage : ContentPage
 
     private async Task<(string Name, string Address, double Lat, double Lng)?> GetPlaceDetailsAsync(string placeId)
     {
-        var url = $"https://places.googleapis.com/v1/places/{placeId}?fields=location,displayName,formattedAddress&key={GooglePlacesKey}";
+        var apiKey = GetGooglePlacesKey();
+        var url = $"https://places.googleapis.com/v1/places/{placeId}?fields=location,displayName,formattedAddress&key={Uri.EscapeDataString(apiKey)}";
         var json = await _http.GetStringAsync(url);
 
         using var doc = JsonDocument.Parse(json);
@@ -427,8 +454,10 @@ public partial class MainPage : ContentPage
     {
         var url = "https://places.googleapis.com/v1/places:searchNearby";
 
+        var apiKey = GetGooglePlacesKey();
+
         using var req = new HttpRequestMessage(HttpMethod.Post, url);
-        req.Headers.Add("X-Goog-Api-Key", GooglePlacesKey);
+        req.Headers.Add("X-Goog-Api-Key", apiKey);
         req.Headers.Add("X-Goog-FieldMask", "places.id,places.displayName,places.formattedAddress,places.location");
 
         var body = new
