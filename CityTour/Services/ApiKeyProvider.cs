@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Maui.Storage;
 
@@ -17,7 +19,9 @@ public class ApiKeyProvider : IApiKeyProvider
     private static readonly string[] CandidateSecretsFileNames = new[]
     {
         "api_keys.json",
-        "api_keys"
+        "api_keys",
+        "api_key.json",
+        "api_key"
     };
 
     private readonly Lazy<ApiKeyPayload> _secrets = new(LoadSecrets);
@@ -56,10 +60,10 @@ public class ApiKeyProvider : IApiKeyProvider
                 return null;
             }
 
-            var payload = JsonSerializer.Deserialize<ApiKeyPayload>(json);
-            if (payload is null)
+            if (!ApiKeyPayload.TryParse(json, out var payload))
             {
                 System.Diagnostics.Debug.WriteLine($"API key file '{fileName}' does not contain a valid payload.");
+                return null;
             }
             return payload;
         }
@@ -88,8 +92,137 @@ public class ApiKeyProvider : IApiKeyProvider
 
     private sealed class ApiKeyPayload
     {
-        public string? GoogleMapsApiKey { get; set; }
-        public string? GooglePlacesApiKey { get; set; }
-        public string? OpenAiApiKey { get; set; }
+        private static readonly JsonSerializerOptions SerializerOptions = new()
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
+        private static readonly string[] GoogleMapsKeyCandidates = new[]
+        {
+            "googlemapsapikey",
+            "googlemapskey",
+            "mapsapikey",
+            "mapskey",
+            "googlemaps"
+        };
+
+        private static readonly string[] GooglePlacesKeyCandidates = new[]
+        {
+            "googleplacesapikey",
+            "googleplaceskey",
+            "placesapikey",
+            "placeskey",
+            "googleplaces"
+        };
+
+        private static readonly string[] OpenAiKeyCandidates = new[]
+        {
+            "openaiapikey",
+            "openaikey",
+            "openai"
+        };
+
+        public string? GoogleMapsApiKey { get; init; }
+        public string? GooglePlacesApiKey { get; init; }
+        public string? OpenAiApiKey { get; init; }
+
+        private bool HasAnyValue
+            => !string.IsNullOrWhiteSpace(GoogleMapsApiKey)
+               || !string.IsNullOrWhiteSpace(GooglePlacesApiKey)
+               || !string.IsNullOrWhiteSpace(OpenAiApiKey);
+
+        public static bool TryParse(string json, out ApiKeyPayload payload)
+        {
+            var typed = JsonSerializer.Deserialize<ApiKeyPayload>(json, SerializerOptions);
+            if (typed is not null && typed.HasAnyValue)
+            {
+                payload = typed;
+                return true;
+            }
+
+            var fallback = ParseLoosely(json);
+            if (fallback.HasAnyValue)
+            {
+                payload = fallback;
+                return true;
+            }
+
+            payload = new ApiKeyPayload();
+            return false;
+        }
+
+        private static ApiKeyPayload ParseLoosely(string json)
+        {
+            using var document = JsonDocument.Parse(
+                json,
+                new JsonDocumentOptions
+                {
+                    AllowTrailingCommas = true,
+                    CommentHandling = JsonCommentHandling.Skip
+                });
+
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return new ApiKeyPayload();
+            }
+
+            var values = new Dictionary<string, string>();
+
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (property.Value.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var normalizedName = NormalizePropertyName(property.Name);
+                if (normalizedName.Length == 0)
+                {
+                    continue;
+                }
+
+                var stringValue = property.Value.GetString();
+                if (string.IsNullOrWhiteSpace(stringValue))
+                {
+                    continue;
+                }
+
+                values[normalizedName] = stringValue;
+            }
+
+            return new ApiKeyPayload
+            {
+                GoogleMapsApiKey = Resolve(values, GoogleMapsKeyCandidates),
+                GooglePlacesApiKey = Resolve(values, GooglePlacesKeyCandidates),
+                OpenAiApiKey = Resolve(values, OpenAiKeyCandidates)
+            };
+        }
+
+        private static string? Resolve(Dictionary<string, string> values, string[] candidates)
+        {
+            foreach (var candidate in candidates)
+            {
+                if (values.TryGetValue(candidate, out var value))
+                {
+                    return value;
+                }
+            }
+
+            return null;
+        }
+
+        private static string NormalizePropertyName(string name)
+        {
+            var buffer = new StringBuilder(name.Length);
+            foreach (var ch in name)
+            {
+                if (char.IsLetterOrDigit(ch))
+                {
+                    buffer.Append(char.ToLowerInvariant(ch));
+                }
+            }
+
+            return buffer.ToString();
+        }
     }
 }
