@@ -56,7 +56,12 @@ public class ApiKeyProvider : IApiKeyProvider
                 return null;
             }
 
-            var payload = JsonSerializer.Deserialize<ApiKeyPayload>(json);
+            var payload = JsonSerializer.Deserialize<ApiKeyPayload>(
+                json,
+                new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
             if (payload is null)
             {
                 System.Diagnostics.Debug.WriteLine($"API key file '{fileName}' does not contain a valid payload.");
