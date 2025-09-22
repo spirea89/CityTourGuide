@@ -183,6 +183,32 @@ public partial class MainPage : ContentPage
         Map.MoveToRegion(MapSpan.FromCenterAndRadius(vienna, Distance.FromKilometers(3)));
     }
 
+    private async void OnClearStoriesClicked(object? sender, EventArgs e)
+    {
+        var saved = LoadSavedBuildings();
+        if (saved.Count == 0)
+        {
+            await DisplayAlert("No stories", "You haven't generated any stories yet.", "OK");
+            return;
+        }
+
+        var confirm = await DisplayAlert(
+            "Remove all stories?",
+            "This will remove every building story you've generated so far.",
+            "Remove",
+            "Cancel");
+
+        if (!confirm)
+        {
+            return;
+        }
+
+        ClearSavedBuildings();
+        RefreshPins(_allPlaces);
+
+        await DisplayAlert("Stories removed", "All generated stories have been removed.", "OK");
+    }
+
     // --- Select building flow ---
 
     private async void OnSelectBuildingClicked(object? sender, EventArgs e)
@@ -455,6 +481,11 @@ public partial class MainPage : ContentPage
         list.Add(b);
         var json = JsonSerializer.Serialize(list);
         Preferences.Set(SavedBuildingsKey, json);
+    }
+
+    private void ClearSavedBuildings()
+    {
+        Preferences.Remove(SavedBuildingsKey);
     }
 
     private List<SavedBuilding> LoadSavedBuildings()
