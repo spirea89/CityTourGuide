@@ -107,10 +107,6 @@ public class AiStoryService : IAiStoryService
 
     private string BuildPrompt(string buildingName, string? buildingAddress, StoryCategory category)
     {
-        var addressPart = string.IsNullOrWhiteSpace(buildingAddress)
-            ? string.Empty
-            : $" located at {buildingAddress}";
-
         var (focusInstruction, toneInstruction, structureInstruction) = category switch
         {
             StoryCategory.History => (
@@ -140,11 +136,26 @@ public class AiStoryService : IAiStoryService
             )
         };
 
-        var prompt = $"Write an engaging story about the building called \"{buildingName}\"{addressPart}. " +
-                     $"{focusInstruction} {toneInstruction} {structureInstruction} " +
-                     "If any details are uncertain, acknowledge the uncertainty instead of inventing facts.";
+        var promptBuilder = new StringBuilder();
 
-        return prompt;
+        if (!string.IsNullOrWhiteSpace(buildingAddress))
+        {
+            promptBuilder.Append($"Write an engaging story about the building tied to the exact street address \"{buildingAddress}\". ");
+            promptBuilder.Append($"The location is currently known as \"{buildingName}\", but base the story on everything historically connected to that address, no matter the building's past or present purpose. ");
+            promptBuilder.Append("Use that precise street and number as the anchor when recalling earlier names, occupants, or notable events linked to the site, and mention them when relevant. ");
+        }
+        else
+        {
+            promptBuilder.Append($"Write an engaging story about the building called \"{buildingName}\". ");
+            promptBuilder.Append("Include meaningful context about how the site has been used or renamed over time whenever possible. ");
+        }
+
+        promptBuilder.Append(focusInstruction).Append(' ');
+        promptBuilder.Append(toneInstruction).Append(' ');
+        promptBuilder.Append(structureInstruction).Append(' ');
+        promptBuilder.Append("If any details are uncertain, acknowledge the uncertainty instead of inventing facts.");
+
+        return promptBuilder.ToString().Trim();
     }
 
     private string ResolveApiKey()
