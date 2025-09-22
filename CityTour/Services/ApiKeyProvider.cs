@@ -14,7 +14,12 @@ public interface IApiKeyProvider
 
 public class ApiKeyProvider : IApiKeyProvider
 {
-    private const string SecretsFileName = "api_keys.json";
+    private static readonly string[] CandidateSecretsFileNames = new[]
+    {
+        "api_keys.json",
+        "api_keys"
+    };
+
     private readonly Lazy<ApiKeyPayload> _secrets = new(LoadSecrets);
 
     public string? GoogleMapsApiKey => Normalize(_secrets.Value.GoogleMapsApiKey);
@@ -23,31 +28,58 @@ public class ApiKeyProvider : IApiKeyProvider
 
     private static ApiKeyPayload LoadSecrets()
     {
+        foreach (var fileName in CandidateSecretsFileNames)
+        {
+            var payload = TryLoadSecrets(fileName);
+            if (payload is not null)
+            {
+                return payload;
+            }
+        }
+
+        System.Diagnostics.Debug.WriteLine(
+            $"No API key bundle found. Expected one of: {string.Join(", ", CandidateSecretsFileNames)}");
+        return new ApiKeyPayload();
+    }
+
+    private static ApiKeyPayload? TryLoadSecrets(string fileName)
+    {
         try
         {
-            using var stream = FileSystem.OpenAppPackageFileAsync(SecretsFileName).GetAwaiter().GetResult();
+            using var stream = FileSystem.OpenAppPackageFileAsync(fileName).GetAwaiter().GetResult();
             using var reader = new StreamReader(stream);
             var json = reader.ReadToEnd();
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                System.Diagnostics.Debug.WriteLine($"API key file '{fileName}' is empty.");
+                return null;
+            }
+
             var payload = JsonSerializer.Deserialize<ApiKeyPayload>(json);
-            return payload ?? new ApiKeyPayload();
+            if (payload is null)
+            {
+                System.Diagnostics.Debug.WriteLine($"API key file '{fileName}' does not contain a valid payload.");
+            }
+            return payload;
         }
         catch (FileNotFoundException)
         {
-            return new ApiKeyPayload();
+            return null;
         }
         catch (DirectoryNotFoundException)
         {
-            return new ApiKeyPayload();
+            return null;
         }
         catch (JsonException ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to parse {SecretsFileName}: {ex.Message}");
-            return new ApiKeyPayload();
+            System.Diagnostics.Debug.WriteLine($"Failed to parse {fileName}: {ex.Message}");
+            return null;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to load {SecretsFileName}: {ex.Message}");
-            return new ApiKeyPayload();
+            System.Diagnostics.Debug.WriteLine($"Failed to load {fileName}: {ex.Message}");
+            return null;
         }
     }
 
