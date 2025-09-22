@@ -1,0 +1,5 @@
+{
+  "googleMapsApiKey": "REPLACE_WITH_YOUR_GOOGLE_MAPS_API_KEY",
+  "googlePlacesApiKey": "REPLACE_WITH_YOUR_GOOGLE_PLACES_API_KEY",
+  "openAiApiKey": "REPLACE_WITH_YOUR_OPENAI_API_KEY"
+}

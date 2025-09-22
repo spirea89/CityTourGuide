@@ -22,14 +22,16 @@ public class AiStoryService : IAiStoryService
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiStoryService> _logger;
+    private readonly IApiKeyProvider _apiKeyProvider;
     private readonly string _model;
     private string? _apiKey;
 
-    public AiStoryService(HttpClient httpClient, ILogger<AiStoryService> logger)
+    public AiStoryService(HttpClient httpClient, ILogger<AiStoryService> logger, IApiKeyProvider apiKeyProvider)
     {
         _httpClient = httpClient;
         _httpClient.Timeout = TimeSpan.FromSeconds(60);
         _logger = logger;
+        _apiKeyProvider = apiKeyProvider;
         _model = Preferences.Get("ai.story.model", DefaultModel);
     }
 
@@ -166,7 +168,14 @@ public class AiStoryService : IAiStoryService
             return _apiKey;
         }
 
-        var key = Preferences.Get("ai.story.apikey", string.Empty);
+        var key = _apiKeyProvider.OpenAiApiKey;
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            _apiKey = key;
+            return key;
+        }
+
+        key = Preferences.Get("ai.story.apikey", string.Empty);
         if (!string.IsNullOrWhiteSpace(key))
         {
             _apiKey = key;
