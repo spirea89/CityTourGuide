@@ -19,6 +19,7 @@ public static class MauiProgram
             });
 
         builder.Services.AddSingleton<HttpClient>(_ => new HttpClient());
+        builder.Services.AddSingleton<IApiKeyProvider, ApiKeyProvider>();
         builder.Services.AddSingleton<Services.PlaceService>();
         builder.Services.AddSingleton<IAiStoryService, AiStoryService>();
         builder.Services.AddSingleton<MainPage>();

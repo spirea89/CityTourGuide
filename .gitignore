@@ -361,3 +361,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Local API keys (not committed)
+CityTour/Resources/Raw/api_keys.json
