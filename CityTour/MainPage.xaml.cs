@@ -353,8 +353,15 @@ public partial class MainPage : ContentPage
 
         var displayAddress = parsed.DisplayAddress ?? parsed.Original;
         var storyAddress = parsed.StoryAddress ?? parsed.Original;
+        var buildingFacts = _service.GetById(placeId)?.Description;
 
-        return Navigation.PushModalAsync(new StoryCanvasPage(placeId, buildingName, displayAddress, storyAddress, _storyService));
+        return Navigation.PushModalAsync(new StoryCanvasPage(
+            placeId,
+            buildingName,
+            displayAddress,
+            storyAddress,
+            buildingFacts,
+            _storyService));
     }
 
     private async Task<string?> GetFirstPlaceIdAsync(string input)
