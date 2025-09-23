@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -13,6 +14,8 @@ public interface IAiStoryService
         string buildingName,
         string? buildingAddress,
         StoryCategory category,
+        string? facts = null,
+        string? language = null,
         CancellationToken cancellationToken = default);
 
     Task<string> AskAddressDetailsAsync(
@@ -25,13 +28,20 @@ public interface IAiStoryService
     string BuildStoryPrompt(
         string buildingName,
         string? buildingAddress,
-        StoryCategory category);
+        StoryCategory category,
+        string? facts = null,
+        string? language = null);
 }
 
 public class AiStoryService : IAiStoryService
 {
     private const string DefaultModel = "gpt-4o-mini";
     private const string SystemMessage = "You are a creative, historically knowledgeable city tour guide. Craft short stories and responses about buildings that feel authentic, welcoming, and vivid.";
+    private const string HistoryPromptTemplate = "You are a meticulous local historian. Using only facts about {address}, write a vivid, chronological ~120–150 word history of {building_name} highlighting founding date, name changes, 2–3 pivotal events, and significance; if a detail is missing, write “unknown.”";
+    private const string PersonalitiesPromptTemplate = "You are a culturally savvy guide. From {facts} on people linked to {building_name} at {address}, craft a ~110–140 word mini-story weaving 2–3 notable figures with full names, dates, roles, and one concrete anecdote each; avoid speculation, note “unknown” when needed, and write in {language}.";
+    private const string ArchitecturePromptTemplate = "You are an architect explaining to curious visitors. Based strictly on {facts}, describe {building_name}’s style, architect, era, materials, façade/interior highlights, notable alterations, and 2 street-level details to spot in clear, jargon-light {language} (~120–150 words), using “unknown” where info is missing.";
+    private const string TodayPromptTemplate = "You are a practical local host. In {language} and ~90–120 words, summarize {building_name}’s current purpose/occupants, public access (hours, tickets, accessibility), photo/etiquette notes, and one nearby tip; if any item isn’t in {facts}, state “unknown.”";
+    private const string KidsPromptTemplate = "You are a playful storyteller for ages 6–10. In {language} and ~90–110 words, tell a cheerful, simple story about {building_name} using easy sentences, fun comparisons or sounds, one cool fact from {facts}, no scary content, and end with a question inviting kids to spot a detail when they visit.";
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiStoryService> _logger;
@@ -52,6 +62,8 @@ public class AiStoryService : IAiStoryService
         string buildingName,
         string? buildingAddress,
         StoryCategory category,
+        string? facts = null,
+        string? language = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(buildingName) && string.IsNullOrWhiteSpace(buildingAddress))
@@ -59,71 +71,99 @@ public class AiStoryService : IAiStoryService
             throw new ArgumentException("A building name or address is required.", nameof(buildingName));
         }
 
-        var prompt = BuildStoryPrompt(buildingName, buildingAddress, category);
+        var prompt = BuildStoryPrompt(buildingName, buildingAddress, category, facts, language);
         var story = await SendChatCompletionAsync(prompt, 0.8, 600, "story", cancellationToken);
 
         return new StoryGenerationResult(story, prompt);
     }
 
-    public string BuildStoryPrompt(string buildingName, string? buildingAddress, StoryCategory category)
+    public string BuildStoryPrompt(
+        string buildingName,
+        string? buildingAddress,
+        StoryCategory category,
+        string? facts = null,
+        string? language = null)
     {
-        if (category == StoryCategory.History)
+        var template = GetPromptTemplate(category);
+        var resolvedFacts = ResolveFacts(facts);
+        var resolvedName = ResolveBuildingName(buildingName, buildingAddress);
+        var resolvedAddress = ResolveAddress(buildingAddress);
+        var resolvedLanguage = ResolveLanguage(language);
+
+        var prompt = template
+            .Replace("{building_name}", resolvedName, StringComparison.Ordinal)
+            .Replace("{address}", resolvedAddress, StringComparison.Ordinal);
+
+        if (template.Contains("{language}", StringComparison.Ordinal))
         {
-            var address = string.IsNullOrWhiteSpace(buildingAddress) ? buildingName : buildingAddress;
-            address ??= string.Empty;
-            return $"Tell me the history of the building found at the address: '{address}'.";
+            prompt = prompt.Replace("{language}", resolvedLanguage, StringComparison.Ordinal);
         }
 
-        var (focusInstruction, toneInstruction, structureInstruction) = category switch
+        if (template.Contains("{facts}", StringComparison.Ordinal))
         {
-            StoryCategory.History => (
-                "Concentrate on the building's historical background, important events, and the evolution of its role in the city.",
-                "Keep the tone warm and welcoming while weaving in vivid sensory details rooted in real history.",
-                "Aim for four paragraphs with 4-6 sentences each."
-            ),
-            StoryCategory.Personalities => (
-                "Highlight the notable people linked to the building and share the human stories that connect them to this place.",
-                "Keep the tone warm, welcoming, and conversational, as if guiding visitors through personal anecdotes.",
-                "Aim for four paragraphs with 4-6 sentences each."
-            ),
-            StoryCategory.Architecture => (
-                "Focus on the building's architectural style, materials, design innovations, and what it feels like to experience the space.",
-                "Use descriptive language that helps visitors visualize textures, shapes, and craftsmanship while staying inviting.",
-                "Aim for four paragraphs with 4-6 sentences each."
-            ),
-            StoryCategory.Kids => (
-                "Explain the building's story in friendly, easy-to-understand language suited for children around ages 8-12, and include what makes it exciting or special to them.",
-                "Keep the tone playful and encouraging, add two or three fun facts or imaginative comparisons, and avoid complex vocabulary.",
-                "Write three short paragraphs with 3-4 sentences each."
-            ),
-            _ => (
-                "Blend historical facts, cultural impact, and vivid sensory details so tourists feel immersed.",
-                "Keep the tone warm and welcoming.",
-                "Aim for four paragraphs with 4-6 sentences each."
-            )
-        };
+            prompt = prompt.Replace("{facts}", resolvedFacts, StringComparison.Ordinal);
+        }
+        else if (!string.IsNullOrWhiteSpace(facts))
+        {
+            prompt = string.Concat(prompt, "\n\nFacts:\n", resolvedFacts);
+        }
 
-        var promptBuilder = new StringBuilder();
+        return prompt;
+    }
+
+    private static string GetPromptTemplate(StoryCategory category)
+    {
+        return category switch
+        {
+            StoryCategory.History => HistoryPromptTemplate,
+            StoryCategory.Personalities => PersonalitiesPromptTemplate,
+            StoryCategory.Architecture => ArchitecturePromptTemplate,
+            StoryCategory.Today => TodayPromptTemplate,
+            StoryCategory.Kids => KidsPromptTemplate,
+            _ => HistoryPromptTemplate
+        };
+    }
+
+    private static string ResolveFacts(string? facts)
+    {
+        return string.IsNullOrWhiteSpace(facts) ? "unknown" : facts.Trim();
+    }
+
+    private static string ResolveBuildingName(string buildingName, string? buildingAddress)
+    {
+        if (!string.IsNullOrWhiteSpace(buildingName))
+        {
+            return buildingName.Trim();
+        }
 
         if (!string.IsNullOrWhiteSpace(buildingAddress))
         {
-            promptBuilder.Append($"Write an engaging story about the building located at the exact street address \"{buildingAddress}\". ");
-            promptBuilder.Append("Base the narrative on everything historically connected to that address, no matter the building's past or present purpose. ");
-            promptBuilder.Append("Do not include modern marketing or attraction names for the site unless they are historically essential; keep the focus on the street address as the visitor's reference point. ");
-            promptBuilder.Append("Use that precise street and number as the anchor when recalling earlier names, occupants, or notable events linked to the site, and mention them when relevant. ");
+            return buildingAddress.Trim();
         }
-        else
+
+        return "unknown building";
+    }
+
+    private static string ResolveAddress(string? buildingAddress)
+    {
+        return string.IsNullOrWhiteSpace(buildingAddress) ? "unknown" : buildingAddress.Trim();
+    }
+
+    private static string ResolveLanguage(string? language)
+    {
+        if (!string.IsNullOrWhiteSpace(language))
         {
-            promptBuilder.Append($"Write an engaging story about the building called \"{buildingName}\". ");
-            promptBuilder.Append("Include meaningful context about how the site has been used or renamed over time whenever possible. ");
+            return language.Trim();
         }
 
-        promptBuilder.Append(focusInstruction).Append(' ');
-        promptBuilder.Append(toneInstruction).Append(' ');
-        promptBuilder.Append(structureInstruction).Append(' ');
-        promptBuilder.Append("If any details are uncertain, acknowledge the uncertainty instead of inventing facts.");
+        var culture = CultureInfo.CurrentUICulture ?? CultureInfo.CurrentCulture;
+        var text = culture.EnglishName;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            text = culture.DisplayName;
+        }
 
-        return promptBuilder.ToString().Trim();
+        return string.IsNullOrWhiteSpace(text) ? "English" : text;
     }
 
     public async Task<string> AskAddressDetailsAsync(

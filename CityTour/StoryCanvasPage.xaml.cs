@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CityTour.Models;
 using CityTour.Services;
 using Microsoft.Maui.ApplicationModel;
@@ -17,6 +18,8 @@ public partial class StoryCanvasPage : ContentPage
     private readonly string? _displayAddress;
     private readonly string? _storyAddress;
     private readonly IAiStoryService _storyService;
+    private readonly string? _buildingFacts;
+    private readonly string _preferredLanguage;
     private CancellationTokenSource? _generationCts;
     private bool _hasTriggeredInitialGeneration;
     private bool _isInitializingCategory;
@@ -26,6 +29,7 @@ public partial class StoryCanvasPage : ContentPage
         new("History", StoryCategory.History),
         new("Personalities", StoryCategory.Personalities),
         new("Architecture", StoryCategory.Architecture),
+        new("Today", StoryCategory.Today),
         new("Kids", StoryCategory.Kids)
     };
     private CancellationTokenSource? _speechCts;
@@ -40,7 +44,13 @@ public partial class StoryCanvasPage : ContentPage
     private const string ChatBusyStatusMessage = "Asking the tour guide…";
     private const string ChatFollowUpStatusMessage = "Ask another follow-up question whenever you're curious.";
 
-    public StoryCanvasPage(string placeId, string buildingName, string? displayAddress, string? storyAddress, IAiStoryService storyService)
+    public StoryCanvasPage(
+        string placeId,
+        string buildingName,
+        string? displayAddress,
+        string? storyAddress,
+        string? buildingFacts,
+        IAiStoryService storyService)
     {
         InitializeComponent();
         _placeId = placeId;
@@ -48,6 +58,8 @@ public partial class StoryCanvasPage : ContentPage
         _displayAddress = string.IsNullOrWhiteSpace(displayAddress) ? null : displayAddress;
         _storyAddress = string.IsNullOrWhiteSpace(storyAddress) ? null : storyAddress;
         _storyService = storyService;
+        _buildingFacts = string.IsNullOrWhiteSpace(buildingFacts) ? null : buildingFacts.Trim();
+        _preferredLanguage = DeterminePreferredLanguage();
 
         ConfigureCategoryPicker();
 
@@ -111,7 +123,13 @@ public partial class StoryCanvasPage : ContentPage
             await ToggleLoadingAsync(true, userInitiated, categoryLabel);
 
             var addressForStory = GetAddressForStory();
-            var storyResult = await _storyService.GenerateStoryAsync(_buildingName, addressForStory, category, cts.Token);
+            var storyResult = await _storyService.GenerateStoryAsync(
+                _buildingName,
+                addressForStory,
+                category,
+                _buildingFacts,
+                _preferredLanguage,
+                cts.Token);
             cts.Token.ThrowIfCancellationRequested();
 
             await MainThread.InvokeOnMainThreadAsync(() =>
@@ -270,7 +288,12 @@ public partial class StoryCanvasPage : ContentPage
 
     private void UpdatePromptPreview()
     {
-        var prompt = _storyService.BuildStoryPrompt(_buildingName, GetAddressForStory(), _selectedCategory);
+        var prompt = _storyService.BuildStoryPrompt(
+            _buildingName,
+            GetAddressForStory(),
+            _selectedCategory,
+            _buildingFacts,
+            _preferredLanguage);
         PromptLabel.Text = prompt;
     }
 
@@ -525,6 +548,26 @@ public partial class StoryCanvasPage : ContentPage
     {
         var address = string.IsNullOrWhiteSpace(_storyAddress) ? _displayAddress : _storyAddress;
         return string.IsNullOrWhiteSpace(address) ? null : address;
+    }
+
+    private static string DeterminePreferredLanguage()
+    {
+        try
+        {
+            var culture = CultureInfo.CurrentUICulture ?? CultureInfo.CurrentCulture;
+            var language = culture.EnglishName;
+
+            if (string.IsNullOrWhiteSpace(language))
+            {
+                language = culture.DisplayName;
+            }
+
+            return string.IsNullOrWhiteSpace(language) ? "English" : language;
+        }
+        catch
+        {
+            return "English";
+        }
     }
 
     private string GetCategoryDisplayName(StoryCategory category)
