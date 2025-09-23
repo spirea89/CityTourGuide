@@ -27,7 +27,8 @@ public partial class DetailPage : ContentPage
             if (_place != null)
             {
                 NameLabel.Text = _place.Name;
-                AddressLabel.Text = _place.Address;
+                var displayAddress = AddressFormatter.GetDisplayAddress(_place.Address) ?? _place.Address;
+                AddressLabel.Text = displayAddress;
                 DescLabel.Text = _place.Description;
             }
         }
