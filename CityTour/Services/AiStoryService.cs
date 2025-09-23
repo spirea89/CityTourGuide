@@ -109,6 +109,13 @@ public class AiStoryService : IAiStoryService
 
     private string BuildPrompt(string buildingName, string? buildingAddress, StoryCategory category)
     {
+        if (category == StoryCategory.History)
+        {
+            var address = string.IsNullOrWhiteSpace(buildingAddress) ? buildingName : buildingAddress;
+            address ??= string.Empty;
+            return $"Tell me the history of the building found at the address: '{address}'.";
+        }
+
         var (focusInstruction, toneInstruction, structureInstruction) = category switch
         {
             StoryCategory.History => (
