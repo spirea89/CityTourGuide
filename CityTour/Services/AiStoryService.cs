@@ -9,16 +9,29 @@ namespace CityTour.Services;
 
 public interface IAiStoryService
 {
-    Task<string> GenerateStoryAsync(
+    Task<StoryGenerationResult> GenerateStoryAsync(
         string buildingName,
         string? buildingAddress,
         StoryCategory category,
         CancellationToken cancellationToken = default);
+
+    Task<string> AskAddressDetailsAsync(
+        string buildingName,
+        string? buildingAddress,
+        string? currentStory,
+        string question,
+        CancellationToken cancellationToken = default);
+
+    string BuildStoryPrompt(
+        string buildingName,
+        string? buildingAddress,
+        StoryCategory category);
 }
 
 public class AiStoryService : IAiStoryService
 {
     private const string DefaultModel = "gpt-4o-mini";
+    private const string SystemMessage = "You are a creative, historically knowledgeable city tour guide. Craft short stories and responses about buildings that feel authentic, welcoming, and vivid.";
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiStoryService> _logger;
@@ -35,7 +48,7 @@ public class AiStoryService : IAiStoryService
         _model = Preferences.Get("ai.story.model", DefaultModel);
     }
 
-    public async Task<string> GenerateStoryAsync(
+    public async Task<StoryGenerationResult> GenerateStoryAsync(
         string buildingName,
         string? buildingAddress,
         StoryCategory category,
@@ -46,68 +59,13 @@ public class AiStoryService : IAiStoryService
             throw new ArgumentException("A building name or address is required.", nameof(buildingName));
         }
 
-        var key = ResolveApiKey();
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            throw new InvalidOperationException("No OpenAI API key configured. Set the OPENAI_API_KEY environment variable or save it in Preferences under 'ai.story.apikey'.");
-        }
+        var prompt = BuildStoryPrompt(buildingName, buildingAddress, category);
+        var story = await SendChatCompletionAsync(prompt, 0.8, 600, "story", cancellationToken);
 
-        var prompt = BuildPrompt(buildingName, buildingAddress, category);
-
-        var payload = new
-        {
-            model = _model,
-            messages = new object[]
-            {
-                new { role = "system", content = "You are a creative, historically knowledgeable city tour guide. Craft short stories about buildings that feel authentic, welcoming, and vivid." },
-                new { role = "user", content = prompt }
-            },
-            temperature = 0.8,
-            max_tokens = 600
-        };
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync();
-
-        if (!response.IsSuccessStatusCode)
-        {
-            var errorMessage = TryExtractErrorMessage(responseBody);
-            var friendlyMessage = string.IsNullOrWhiteSpace(errorMessage)
-                ? $"OpenAI API error ({(int)response.StatusCode})."
-                : $"OpenAI API error ({(int)response.StatusCode}): {errorMessage}";
-
-            _logger.LogError("OpenAI API returned {Status}: {Body}", response.StatusCode, responseBody);
-            throw new InvalidOperationException(friendlyMessage);
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(responseBody);
-            var story = doc.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
-
-            if (string.IsNullOrWhiteSpace(story))
-            {
-                throw new InvalidOperationException("OpenAI response did not contain story content.");
-            }
-
-            return story.Trim();
-        }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
-        {
-            _logger.LogError(ex, "Failed to parse OpenAI response: {Body}", responseBody);
-            throw new InvalidOperationException("Failed to parse the story response from OpenAI.", ex);
-        }
+        return new StoryGenerationResult(story, prompt);
     }
 
-    private string BuildPrompt(string buildingName, string? buildingAddress, StoryCategory category)
+    public string BuildStoryPrompt(string buildingName, string? buildingAddress, StoryCategory category)
     {
         if (category == StoryCategory.History)
         {
@@ -166,6 +124,136 @@ public class AiStoryService : IAiStoryService
         promptBuilder.Append("If any details are uncertain, acknowledge the uncertainty instead of inventing facts.");
 
         return promptBuilder.ToString().Trim();
+    }
+
+    public async Task<string> AskAddressDetailsAsync(
+        string buildingName,
+        string? buildingAddress,
+        string? currentStory,
+        string question,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(buildingName) && string.IsNullOrWhiteSpace(buildingAddress))
+        {
+            throw new ArgumentException("A building name or address is required.", nameof(buildingName));
+        }
+
+        if (string.IsNullOrWhiteSpace(question))
+        {
+            throw new ArgumentException("A question is required.", nameof(question));
+        }
+
+        var prompt = BuildFollowUpPrompt(buildingName, buildingAddress, currentStory, question);
+        return await SendChatCompletionAsync(prompt, 0.7, 400, "follow-up answer", cancellationToken);
+    }
+
+    private string BuildFollowUpPrompt(
+        string buildingName,
+        string? buildingAddress,
+        string? currentStory,
+        string question)
+    {
+        var promptBuilder = new StringBuilder();
+        var trimmedQuestion = question.Trim();
+
+        if (!string.IsNullOrWhiteSpace(buildingAddress))
+        {
+            promptBuilder.AppendLine($"A visitor is curious about the building at the exact street address \"{buildingAddress}\".");
+            promptBuilder.AppendLine("Use reliable historical knowledge tied to that location whenever possible.");
+        }
+        else
+        {
+            promptBuilder.AppendLine($"A visitor is curious about the building known as \"{buildingName}\".");
+        }
+
+        var trimmedStory = string.IsNullOrWhiteSpace(currentStory) ? null : currentStory.Trim();
+        if (!string.IsNullOrWhiteSpace(trimmedStory))
+        {
+            promptBuilder.AppendLine();
+            promptBuilder.AppendLine("Here is the story that was previously shared about this place:");
+            promptBuilder.AppendLine(trimmedStory);
+        }
+
+        promptBuilder.AppendLine();
+        promptBuilder.AppendLine("Answer the visitor's follow-up question with historically grounded, welcoming detail.");
+        promptBuilder.AppendLine("If you are unsure about any detail, acknowledge the uncertainty instead of inventing facts.");
+        promptBuilder.AppendLine("Keep the response concise—no more than two short paragraphs.");
+        promptBuilder.Append("Question: ").Append(trimmedQuestion);
+
+        return promptBuilder.ToString().Trim();
+    }
+
+    private async Task<string> SendChatCompletionAsync(
+        string prompt,
+        double temperature,
+        int maxTokens,
+        string failureContext,
+        CancellationToken cancellationToken)
+    {
+        var key = GetOrThrowApiKey();
+
+        var payload = new
+        {
+            model = _model,
+            messages = new object[]
+            {
+                new { role = "system", content = SystemMessage },
+                new { role = "user", content = prompt }
+            },
+            temperature,
+            max_tokens = maxTokens
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorMessage = TryExtractErrorMessage(responseBody);
+            var friendlyMessage = string.IsNullOrWhiteSpace(errorMessage)
+                ? $"OpenAI API error ({(int)response.StatusCode})."
+                : $"OpenAI API error ({(int)response.StatusCode}): {errorMessage}";
+
+            _logger.LogError("OpenAI API returned {Status}: {Body}", response.StatusCode, responseBody);
+            throw new InvalidOperationException(friendlyMessage);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(responseBody);
+            var content = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString();
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                throw new InvalidOperationException($"OpenAI response did not contain {failureContext} content.");
+            }
+
+            return content.Trim();
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
+            throw new InvalidOperationException($"Failed to parse the {failureContext} response from OpenAI.", ex);
+        }
+    }
+
+    private string GetOrThrowApiKey()
+    {
+        var key = ResolveApiKey();
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            throw new InvalidOperationException("No OpenAI API key configured. Set the OPENAI_API_KEY environment variable or save it in Preferences under 'ai.story.apikey'.");
+        }
+
+        return key;
     }
 
     private string ResolveApiKey()
