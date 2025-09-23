@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">CityTour</string>
+    <!-- Replace with your real key locally. -->
+    <string name="google_maps_api_key">AIzaSyBmlEatUTKXgQ9NCgYyHWGn0o7p4JPBw0I</string>
+</resources>
