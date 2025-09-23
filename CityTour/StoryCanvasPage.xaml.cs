@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using CityTour.Models;
 using CityTour.Services;
 using Microsoft.Maui.ApplicationModel;
@@ -32,6 +33,12 @@ public partial class StoryCanvasPage : ContentPage
     private bool _isLoadingVoices;
     private bool _hasAttemptedVoiceLoad;
     private List<LocaleOption> _voiceOptions = new();
+    private readonly ObservableCollection<ChatMessage> _chatMessages = new();
+    private CancellationTokenSource? _chatCts;
+    private bool _isChatBusy;
+    private const string ChatReadyStatusMessage = "Ask the guide for more details about this address.";
+    private const string ChatBusyStatusMessage = "Asking the tour guide…";
+    private const string ChatFollowUpStatusMessage = "Ask another follow-up question whenever you're curious.";
 
     public StoryCanvasPage(string placeId, string buildingName, string? displayAddress, string? storyAddress, IAiStoryService storyService)
     {
@@ -58,9 +65,13 @@ public partial class StoryCanvasPage : ContentPage
         StatusLabel.Text = $"Preparing {GetCategoryDisplayName(_selectedCategory)} story…";
         RegenerateButton.IsEnabled = false;
         UpdateRegenerateButtonText();
+        ChatCollectionView.ItemsSource = _chatMessages;
+        ChatStatusLabel.Text = ChatReadyStatusMessage;
+        UpdatePromptPreview();
 
         StoryEditor.TextChanged += OnStoryTextChanged;
         UpdateAudioControls();
+        UpdateChatControls();
     }
 
     protected override void OnAppearing()
@@ -81,6 +92,7 @@ public partial class StoryCanvasPage : ContentPage
         base.OnDisappearing();
         _generationCts?.Cancel();
         CancelSpeech();
+        _chatCts?.Cancel();
     }
 
     private async Task GenerateStoryAsync(bool userInitiated = false)
@@ -98,18 +110,14 @@ public partial class StoryCanvasPage : ContentPage
         {
             await ToggleLoadingAsync(true, userInitiated, categoryLabel);
 
-            var addressForStory = string.IsNullOrWhiteSpace(_storyAddress) ? _displayAddress : _storyAddress;
-            if (string.IsNullOrWhiteSpace(addressForStory))
-            {
-                addressForStory = null;
-            }
-
-            var story = await _storyService.GenerateStoryAsync(_buildingName, addressForStory, category, cts.Token);
+            var addressForStory = GetAddressForStory();
+            var storyResult = await _storyService.GenerateStoryAsync(_buildingName, addressForStory, category, cts.Token);
             cts.Token.ThrowIfCancellationRequested();
 
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                StoryEditor.Text = story;
+                StoryEditor.Text = storyResult.Story;
+                PromptLabel.Text = storyResult.Prompt;
             });
 
             await SetStatusAsync($"Story generated with AI ({categoryLabel} focus). Feel free to tweak or add your own notes.");
@@ -165,6 +173,7 @@ public partial class StoryCanvasPage : ContentPage
     {
         _generationCts?.Cancel();
         CancelSpeech();
+        _chatCts?.Cancel();
         await Navigation.PopModalAsync();
     }
 
@@ -234,9 +243,15 @@ public partial class StoryCanvasPage : ContentPage
             return;
         }
 
-        var categoryChanged = option.Category != _selectedCategory;
+        var previousCategory = _selectedCategory;
         _selectedCategory = option.Category;
         UpdateRegenerateButtonText();
+
+        var categoryChanged = previousCategory != _selectedCategory;
+        if (categoryChanged)
+        {
+            UpdatePromptPreview();
+        }
 
         if (!categoryChanged || _isInitializingCategory)
         {
@@ -251,6 +266,119 @@ public partial class StoryCanvasPage : ContentPage
     {
         var label = GetCategoryDisplayName(_selectedCategory);
         RegenerateButton.Text = $"Regenerate {label} story";
+    }
+
+    private void UpdatePromptPreview()
+    {
+        var prompt = _storyService.BuildStoryPrompt(_buildingName, GetAddressForStory(), _selectedCategory);
+        PromptLabel.Text = prompt;
+    }
+
+    private void OnSendChatClicked(object? sender, EventArgs e)
+    {
+        _ = SendChatAsync();
+    }
+
+    private void OnChatEntryCompleted(object? sender, EventArgs e)
+    {
+        _ = SendChatAsync();
+    }
+
+    private void OnChatTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        UpdateChatControls();
+    }
+
+    private async Task SendChatAsync()
+    {
+        if (_isChatBusy)
+        {
+            return;
+        }
+
+        var question = ChatEntry.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(question))
+        {
+            return;
+        }
+
+        ChatEntry.Text = string.Empty;
+        UpdateChatControls();
+
+        await AddChatMessageAsync(new ChatMessage(question, isUser: true));
+
+        var cts = new CancellationTokenSource();
+        _chatCts?.Cancel();
+        _chatCts = cts;
+
+        try
+        {
+            await SetChatBusyStateAsync(true, ChatBusyStatusMessage);
+
+            var address = GetAddressForStory();
+            var storyText = string.IsNullOrWhiteSpace(StoryEditor.Text) ? null : StoryEditor.Text;
+
+            var response = await _storyService.AskAddressDetailsAsync(
+                _buildingName,
+                address,
+                storyText,
+                question,
+                cts.Token);
+
+            cts.Token.ThrowIfCancellationRequested();
+
+            await AddChatMessageAsync(new ChatMessage(response, isUser: false));
+            await SetChatBusyStateAsync(false, ChatFollowUpStatusMessage);
+        }
+        catch (OperationCanceledException)
+        {
+            await SetChatBusyStateAsync(false, ChatReadyStatusMessage);
+        }
+        catch (Exception ex)
+        {
+            await SetChatBusyStateAsync(false, $"Could not ask for more details. {ex.Message}");
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                await DisplayAlert("Chat failed", ex.Message, "OK");
+            });
+        }
+        finally
+        {
+            if (ReferenceEquals(_chatCts, cts))
+            {
+                _chatCts = null;
+            }
+
+            cts.Dispose();
+        }
+    }
+
+    private Task AddChatMessageAsync(ChatMessage message)
+    {
+        return MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            _chatMessages.Add(message);
+            ChatCollectionView.ScrollTo(message, position: ScrollToPosition.End, animate: true);
+        });
+    }
+
+    private Task SetChatBusyStateAsync(bool isBusy, string message)
+    {
+        return MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            _isChatBusy = isBusy;
+            ChatLoadingIndicator.IsVisible = isBusy;
+            ChatLoadingIndicator.IsRunning = isBusy;
+            ChatStatusLabel.Text = message;
+            UpdateChatControls();
+        });
+    }
+
+    private void UpdateChatControls()
+    {
+        var hasText = !string.IsNullOrWhiteSpace(ChatEntry.Text);
+        ChatEntry.IsEnabled = !_isChatBusy;
+        SendChatButton.IsEnabled = !_isChatBusy && hasText;
     }
 
     private void OnStoryTextChanged(object? sender, TextChangedEventArgs e)
@@ -391,6 +519,12 @@ public partial class StoryCanvasPage : ContentPage
         }
 
         return null;
+    }
+
+    private string? GetAddressForStory()
+    {
+        var address = string.IsNullOrWhiteSpace(_storyAddress) ? _displayAddress : _storyAddress;
+        return string.IsNullOrWhiteSpace(address) ? null : address;
     }
 
     private string GetCategoryDisplayName(StoryCategory category)
