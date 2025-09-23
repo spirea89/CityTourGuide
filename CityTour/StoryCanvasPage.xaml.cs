@@ -13,7 +13,8 @@ public partial class StoryCanvasPage : ContentPage
 {
     private readonly string _placeId;
     private readonly string _buildingName;
-    private readonly string? _buildingAddress;
+    private readonly string? _displayAddress;
+    private readonly string? _storyAddress;
     private readonly IAiStoryService _storyService;
     private CancellationTokenSource? _generationCts;
     private bool _hasTriggeredInitialGeneration;
@@ -32,19 +33,20 @@ public partial class StoryCanvasPage : ContentPage
     private bool _hasAttemptedVoiceLoad;
     private List<LocaleOption> _voiceOptions = new();
 
-    public StoryCanvasPage(string placeId, string buildingName, string buildingAddress, IAiStoryService storyService)
+    public StoryCanvasPage(string placeId, string buildingName, string? displayAddress, string? storyAddress, IAiStoryService storyService)
     {
         InitializeComponent();
         _placeId = placeId;
         _buildingName = buildingName;
-        _buildingAddress = string.IsNullOrWhiteSpace(buildingAddress) ? null : buildingAddress;
+        _displayAddress = string.IsNullOrWhiteSpace(displayAddress) ? null : displayAddress;
+        _storyAddress = string.IsNullOrWhiteSpace(storyAddress) ? null : storyAddress;
         _storyService = storyService;
 
         ConfigureCategoryPicker();
 
-        var labelText = string.IsNullOrWhiteSpace(_buildingAddress)
+        var labelText = string.IsNullOrWhiteSpace(_displayAddress)
             ? buildingName
-            : $"{buildingName}\n{_buildingAddress}";
+            : $"{buildingName}\n{_displayAddress}";
         BuildingNameLabel.Text = labelText;
 
         StatusLabel.Text = $"Preparing {GetCategoryDisplayName(_selectedCategory)} story…";
@@ -90,7 +92,13 @@ public partial class StoryCanvasPage : ContentPage
         {
             await ToggleLoadingAsync(true, userInitiated, categoryLabel);
 
-            var story = await _storyService.GenerateStoryAsync(_buildingName, _buildingAddress, category, cts.Token);
+            var addressForStory = string.IsNullOrWhiteSpace(_storyAddress) ? _displayAddress : _storyAddress;
+            if (string.IsNullOrWhiteSpace(addressForStory))
+            {
+                addressForStory = null;
+            }
+
+            var story = await _storyService.GenerateStoryAsync(_buildingName, addressForStory, category, cts.Token);
             cts.Token.ThrowIfCancellationRequested();
 
             await MainThread.InvokeOnMainThreadAsync(() =>

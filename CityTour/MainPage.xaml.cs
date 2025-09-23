@@ -233,9 +233,10 @@ public partial class MainPage : ContentPage
             }
 
             var (placeId, name, address, lat, lng) = place.Value;
+            var displayAddress = AddressFormatter.GetDisplayAddress(address) ?? address;
 
             var confirm = await DisplayAlert("Save this building?",
-                $"{name}\n{address}", "Save", "Cancel");
+                $"{name}\n{displayAddress}", "Save", "Cancel");
             if (!confirm) return;
 
             // Save locally
@@ -326,12 +327,13 @@ public partial class MainPage : ContentPage
 
     private Pin CreateStoryPin(string placeId, string buildingName, string? buildingAddress, Location location, bool isSaved = false)
     {
-        var address = buildingAddress ?? string.Empty;
+        var parsedAddress = AddressFormatter.Parse(buildingAddress);
+        var displayAddress = parsedAddress.DisplayAddress ?? parsedAddress.Original ?? string.Empty;
 
         var pin = new Pin
         {
             Label = isSaved ? $"★ {buildingName}" : buildingName,
-            Address = address,
+            Address = displayAddress,
             Type = PinType.Place,
             Location = location
         };
@@ -339,15 +341,20 @@ public partial class MainPage : ContentPage
         pin.MarkerClicked += async (s, e) =>
         {
             e.HideInfoWindow = true;
-            await NavigateToStoryCanvasAsync(placeId, buildingName, address);
+            await NavigateToStoryCanvasAsync(placeId, buildingName, buildingAddress, parsedAddress);
         };
 
         return pin;
     }
 
-    private Task NavigateToStoryCanvasAsync(string placeId, string buildingName, string buildingAddress)
+    private Task NavigateToStoryCanvasAsync(string placeId, string buildingName, string? buildingAddress, AddressFormatter.ParsedAddress? parsed = null)
     {
-        return Navigation.PushModalAsync(new StoryCanvasPage(placeId, buildingName, buildingAddress, _storyService));
+        parsed ??= AddressFormatter.Parse(buildingAddress);
+
+        var displayAddress = parsed.DisplayAddress ?? parsed.Original;
+        var storyAddress = parsed.StoryAddress ?? parsed.Original;
+
+        return Navigation.PushModalAsync(new StoryCanvasPage(placeId, buildingName, displayAddress, storyAddress, _storyService));
     }
 
     private async Task<string?> GetFirstPlaceIdAsync(string input)
