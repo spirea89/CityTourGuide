@@ -19,6 +19,9 @@ public partial class StoryCanvasPage : ContentPage
     private readonly string? _displayAddress;
     private readonly string? _storyAddress;
     private readonly IAiStoryService _storyService;
+    private readonly IApiKeyProvider _apiKeys;
+    private readonly double? _latitude;
+    private readonly double? _longitude;
     private readonly string? _buildingFacts;
     private readonly string _preferredLanguage;
     private CancellationTokenSource? _generationCts;
@@ -60,7 +63,10 @@ public partial class StoryCanvasPage : ContentPage
         string? displayAddress,
         string? storyAddress,
         string? buildingFacts,
-        IAiStoryService storyService)
+        IAiStoryService storyService,
+        IApiKeyProvider apiKeyProvider,
+        double? latitude = null,
+        double? longitude = null)
     {
         InitializeComponent();
         _placeId = placeId;
@@ -68,6 +74,9 @@ public partial class StoryCanvasPage : ContentPage
         _displayAddress = string.IsNullOrWhiteSpace(displayAddress) ? null : displayAddress;
         _storyAddress = string.IsNullOrWhiteSpace(storyAddress) ? null : storyAddress;
         _storyService = storyService;
+        _apiKeys = apiKeyProvider;
+        _latitude = latitude;
+        _longitude = longitude;
         _buildingFacts = string.IsNullOrWhiteSpace(buildingFacts) ? null : buildingFacts.Trim();
         _preferredLanguage = DeterminePreferredLanguage();
 
@@ -95,6 +104,7 @@ public partial class StoryCanvasPage : ContentPage
         StoryEditor.TextChanged += OnStoryTextChanged;
         UpdateAudioControls();
         UpdateChatControls();
+        UpdateStreetViewSection();
     }
 
     protected override void OnAppearing()
@@ -525,6 +535,60 @@ public partial class StoryCanvasPage : ContentPage
             ChatStatusLabel.Text = message;
             UpdateChatControls();
         });
+    }
+
+    private void UpdateStreetViewSection()
+    {
+        if (_latitude is not double latitude || _longitude is not double longitude)
+        {
+            ShowStreetViewMessage("Street View is not available for this location.");
+            return;
+        }
+
+        var apiKey = _apiKeys.GoogleMapsApiKey;
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            ShowStreetViewMessage("Add a Google Maps API key to view Street View for this address.");
+            return;
+        }
+
+        var html = BuildStreetViewHtml(apiKey, latitude, longitude);
+        StreetViewWebView.Source = new HtmlWebViewSource { Html = html };
+        StreetViewWebView.IsVisible = true;
+        StreetViewStatusLabel.IsVisible = false;
+    }
+
+    private void ShowStreetViewMessage(string message)
+    {
+        StreetViewWebView.Source = null;
+        StreetViewWebView.IsVisible = false;
+        StreetViewStatusLabel.IsVisible = true;
+        StreetViewStatusLabel.Text = message;
+    }
+
+    private static string BuildStreetViewHtml(string apiKey, double latitude, double longitude)
+    {
+        var encodedKey = Uri.EscapeDataString(apiKey);
+        var lat = latitude.ToString(CultureInfo.InvariantCulture);
+        var lng = longitude.ToString(CultureInfo.InvariantCulture);
+
+        return $@"<!DOCTYPE html>
+<html>
+<head>
+<meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+<style>
+html, body {{ margin: 0; padding: 0; background-color: transparent; }}
+iframe {{ border: 0; width: 100%; height: 100%; border-radius: 12px; }}
+</style>
+</head>
+<body>
+<iframe allowfullscreen
+        loading=""lazy""
+        referrerpolicy=""no-referrer-when-downgrade""
+        src=""https://www.google.com/maps/embed/v1/streetview?key={encodedKey}&location={lat},{lng}&heading=210&pitch=0&fov=90"">
+</iframe>
+</body>
+</html>";
     }
 
     private void UpdateChatControls()
