@@ -258,7 +258,7 @@ public partial class MainPage : ContentPage
             SelectBuildingBtn.Text = "Select building";
 
             // Open the empty canvas page
-            await NavigateToStoryCanvasAsync(b.PlaceId, b.Name, b.Address);
+            await NavigateToStoryCanvasAsync(b.PlaceId, b.Name, b.Address, latitude: b.Latitude, longitude: b.Longitude);
 
         }
         catch (Exception ex)
@@ -317,7 +317,8 @@ public partial class MainPage : ContentPage
             var pin = CreateStoryPin(placeId, place.Value.Name, place.Value.Address, loc);
             Map.Pins.Add(pin);
 
-            await NavigateToStoryCanvasAsync(placeId, place.Value.Name, place.Value.Address);
+            await NavigateToStoryCanvasAsync(placeId, place.Value.Name, place.Value.Address,
+                latitude: place.Value.Lat, longitude: place.Value.Lng);
         }
         catch (Exception ex)
         {
@@ -341,19 +342,30 @@ public partial class MainPage : ContentPage
         pin.MarkerClicked += async (s, e) =>
         {
             e.HideInfoWindow = true;
-            await NavigateToStoryCanvasAsync(placeId, buildingName, buildingAddress, parsedAddress);
+            await NavigateToStoryCanvasAsync(placeId, buildingName, buildingAddress, parsedAddress,
+                latitude: pin.Location.Latitude, longitude: pin.Location.Longitude);
         };
 
         return pin;
     }
 
-    private Task NavigateToStoryCanvasAsync(string placeId, string buildingName, string? buildingAddress, AddressFormatter.ParsedAddress? parsed = null)
+    private Task NavigateToStoryCanvasAsync(string placeId, string buildingName, string? buildingAddress,
+        AddressFormatter.ParsedAddress? parsed = null, double? latitude = null, double? longitude = null)
     {
         parsed ??= AddressFormatter.Parse(buildingAddress);
 
         var displayAddress = parsed.DisplayAddress ?? parsed.Original;
         var storyAddress = parsed.StoryAddress ?? parsed.Original;
-        var buildingFacts = _service.GetById(placeId)?.Description;
+        var place = _service.GetById(placeId);
+        var buildingFacts = place?.Description;
+
+        var lat = latitude;
+        var lng = longitude;
+        if (place is not null)
+        {
+            lat ??= place.Latitude;
+            lng ??= place.Longitude;
+        }
 
         return Navigation.PushModalAsync(new StoryCanvasPage(
             placeId,
@@ -361,7 +373,10 @@ public partial class MainPage : ContentPage
             displayAddress,
             storyAddress,
             buildingFacts,
-            _storyService));
+            _storyService,
+            _apiKeys,
+            lat,
+            lng));
     }
 
     private async Task<string?> GetFirstPlaceIdAsync(string input)
