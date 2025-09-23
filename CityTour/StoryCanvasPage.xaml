@@ -6,7 +6,7 @@
     xmlns:models="clr-namespace:CityTour.Models"
     Padding="16">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
 
         <Label Text="New story"
                FontSize="22"
@@ -25,7 +25,34 @@
                LineBreakMode="WordWrap"
                TextColor="{AppThemeBinding Light=#666, Dark=#AAA}" />
 
-        <StackLayout Grid.Row="3"
+        <VerticalStackLayout Grid.Row="3"
+                             Spacing="4">
+            <Label Text="Street view"
+                   FontAttributes="Bold"
+                   FontSize="14" />
+            <Frame Padding="0"
+                   HasShadow="False"
+                   CornerRadius="12"
+                   BackgroundColor="{AppThemeBinding Light=#F5F5F5, Dark=#1F1F1F}"
+                   BorderColor="{AppThemeBinding Light=#E5E7EB, Dark=#3F3F46}">
+                <Grid HeightRequest="200">
+                    <WebView x:Name="StreetViewWebView"
+                             HeightRequest="200"
+                             HorizontalOptions="Fill"
+                             VerticalOptions="Fill"
+                             IsVisible="False" />
+                    <Label x:Name="StreetViewStatusLabel"
+                           Text="Loading Street View…"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"
+                           HorizontalTextAlignment="Center"
+                           Margin="16,12"
+                           TextColor="{AppThemeBinding Light=#6B7280, Dark=#D4D4D8}" />
+                </Grid>
+            </Frame>
+        </VerticalStackLayout>
+
+        <StackLayout Grid.Row="4"
                      Spacing="4">
             <Label Text="Story focus"
                    FontAttributes="Bold"
@@ -35,7 +62,7 @@
                     SelectedIndexChanged="OnCategoryChanged" />
         </StackLayout>
 
-        <StackLayout Grid.Row="4"
+        <StackLayout Grid.Row="5"
                      Spacing="4">
             <Label Text="AI model"
                    FontAttributes="Bold"
@@ -46,7 +73,7 @@
                     SelectedIndexChanged="OnModelChanged" />
         </StackLayout>
 
-        <Grid Grid.Row="5"
+        <Grid Grid.Row="6"
               ColumnDefinitions="Auto,*"
               ColumnSpacing="8">
             <ActivityIndicator x:Name="LoadingIndicator"
@@ -60,16 +87,16 @@
         </Grid>
 
         <Editor x:Name="StoryEditor"
-                Grid.Row="6"
+                Grid.Row="7"
                 Placeholder="Tweak or add your own notes here..."
                 AutoSize="TextChanges" />
 
-        <Label Grid.Row="7"
+        <Label Grid.Row="8"
                Text="Ask about this place"
                FontSize="14"
                FontAttributes="Bold" />
 
-        <Grid Grid.Row="8"
+        <Grid Grid.Row="9"
               ColumnDefinitions="Auto,*"
               ColumnSpacing="8">
             <ActivityIndicator x:Name="ChatLoadingIndicator"
@@ -84,7 +111,7 @@
         </Grid>
 
         <CollectionView x:Name="ChatCollectionView"
-                        Grid.Row="9"
+                        Grid.Row="10"
                         BackgroundColor="Transparent"
                         SelectionMode="None"
                         VerticalScrollBarVisibility="Never">
@@ -123,7 +150,7 @@
             </CollectionView.ItemTemplate>
         </CollectionView>
 
-        <Grid Grid.Row="10"
+        <Grid Grid.Row="11"
               ColumnDefinitions="*,Auto"
               ColumnSpacing="8">
             <Entry x:Name="ChatEntry"
@@ -137,7 +164,7 @@
                     Clicked="OnSendChatClicked" />
         </Grid>
 
-        <StackLayout Grid.Row="11"
+        <StackLayout Grid.Row="12"
                      Spacing="4">
             <Label Text="Voice"
                    FontAttributes="Bold"
@@ -147,7 +174,7 @@
                     ItemDisplayBinding="{Binding DisplayName}" />
         </StackLayout>
 
-        <Grid Grid.Row="12"
+        <Grid Grid.Row="13"
               ColumnDefinitions="*,*"
               ColumnSpacing="8">
             <Button x:Name="ListenButton"
@@ -161,11 +188,11 @@
         </Grid>
 
         <Button x:Name="RegenerateButton"
-                Grid.Row="13"
+                Grid.Row="14"
                 Text="Regenerate story"
                 Clicked="OnRegenerateClicked" />
 
-        <Button Grid.Row="14"
+        <Button Grid.Row="15"
                 Text="Close"
                 Clicked="OnCloseClicked" />
     </Grid>
