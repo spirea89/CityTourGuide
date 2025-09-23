@@ -363,3 +363,6 @@ MigrationBackup/
 FodyWeavers.xsd
 # Local API keys (not committed)
 CityTour/Resources/Raw/api_keys.json
+/CityTour/Resources/Raw/api_keys.json
+/CityTour/Resources/Raw/api_keys.example.json
+/CityTour/Platforms/Android/Resources/values/Strings.xml
