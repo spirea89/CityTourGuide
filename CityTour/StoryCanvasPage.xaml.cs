@@ -44,10 +44,16 @@ public partial class StoryCanvasPage : ContentPage
 
         ConfigureCategoryPicker();
 
-        var labelText = string.IsNullOrWhiteSpace(_displayAddress)
-            ? buildingName
-            : $"{buildingName}\n{_displayAddress}";
-        BuildingNameLabel.Text = labelText;
+        var addressForStory = string.IsNullOrWhiteSpace(_storyAddress)
+            ? _displayAddress
+            : _storyAddress;
+
+        if (string.IsNullOrWhiteSpace(addressForStory))
+        {
+            addressForStory = buildingName;
+        }
+
+        BuildingNameLabel.Text = addressForStory;
 
         StatusLabel.Text = $"Preparing {GetCategoryDisplayName(_selectedCategory)} story…";
         RegenerateButton.IsEnabled = false;
