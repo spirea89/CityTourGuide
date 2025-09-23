@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -32,6 +33,15 @@ public partial class StoryCanvasPage : ContentPage
         new("Today", StoryCategory.Today),
         new("Kids", StoryCategory.Kids)
     };
+    private readonly List<ModelOption> _modelOptions = new()
+    {
+        new("GPT-4o mini", "gpt-4o-mini", "Fast and cost-efficient"),
+        new("GPT-4o", "gpt-4o", "Balanced quality and cost"),
+        new("GPT-4.1 mini", "gpt-4.1-mini", "Smarter reasoning, moderate speed"),
+        new("GPT-4.1", "gpt-4.1", "Highest quality responses")
+    };
+    private ModelOption? _selectedModel;
+    private bool _isInitializingModel;
     private CancellationTokenSource? _speechCts;
     private bool _isSpeaking;
     private bool _isLoadingVoices;
@@ -62,6 +72,7 @@ public partial class StoryCanvasPage : ContentPage
         _preferredLanguage = DeterminePreferredLanguage();
 
         ConfigureCategoryPicker();
+        ConfigureModelPicker();
 
         var addressForStory = string.IsNullOrWhiteSpace(_storyAddress)
             ? _displayAddress
@@ -74,7 +85,7 @@ public partial class StoryCanvasPage : ContentPage
 
         BuildingNameLabel.Text = addressForStory;
 
-        StatusLabel.Text = $"Preparing {GetCategoryDisplayName(_selectedCategory)} story…";
+        StatusLabel.Text = $"Preparing {GetCategoryDisplayName(_selectedCategory)} story with {GetSelectedModelLabel()}…";
         RegenerateButton.IsEnabled = false;
         UpdateRegenerateButtonText();
         ChatCollectionView.ItemsSource = _chatMessages;
@@ -117,10 +128,11 @@ public partial class StoryCanvasPage : ContentPage
 
         var category = _selectedCategory;
         var categoryLabel = GetCategoryDisplayName(category);
+        var modelLabel = GetSelectedModelLabel();
 
         try
         {
-            await ToggleLoadingAsync(true, userInitiated, categoryLabel);
+            await ToggleLoadingAsync(true, userInitiated, categoryLabel, modelLabel);
 
             var addressForStory = GetAddressForStory();
             var storyResult = await _storyService.GenerateStoryAsync(
@@ -138,7 +150,7 @@ public partial class StoryCanvasPage : ContentPage
                 PromptLabel.Text = storyResult.Prompt;
             });
 
-            await SetStatusAsync($"Story generated with AI ({categoryLabel} focus). Feel free to tweak or add your own notes.");
+            await SetStatusAsync($"Story generated with {modelLabel} ({categoryLabel} focus). Feel free to tweak or add your own notes.");
         }
         catch (OperationCanceledException)
         {
@@ -155,11 +167,11 @@ public partial class StoryCanvasPage : ContentPage
         }
         finally
         {
-            await ToggleLoadingAsync(false, userInitiated, categoryLabel);
+            await ToggleLoadingAsync(false, userInitiated, categoryLabel, modelLabel);
         }
     }
 
-    private Task ToggleLoadingAsync(bool isLoading, bool userInitiated, string categoryLabel)
+    private Task ToggleLoadingAsync(bool isLoading, bool userInitiated, string categoryLabel, string modelLabel)
     {
         return MainThread.InvokeOnMainThreadAsync(() =>
         {
@@ -169,7 +181,7 @@ public partial class StoryCanvasPage : ContentPage
             if (isLoading)
             {
                 var verb = userInitiated ? "Regenerating" : "Generating";
-                StatusLabel.Text = $"{verb} {categoryLabel} story…";
+                StatusLabel.Text = $"{verb} {categoryLabel} story with {modelLabel}…";
             }
         });
     }
@@ -239,6 +251,47 @@ public partial class StoryCanvasPage : ContentPage
         }
     }
 
+    private void ConfigureModelPicker()
+    {
+        if (_modelOptions.Count == 0)
+        {
+            ModelPicker.IsEnabled = false;
+            return;
+        }
+
+        _isInitializingModel = true;
+
+        try
+        {
+            ModelPicker.ItemsSource = _modelOptions;
+
+            var currentModel = _storyService.CurrentModel;
+            var selectedOption = _modelOptions
+                .FirstOrDefault(option => string.Equals(option.ModelId, currentModel, StringComparison.OrdinalIgnoreCase))
+                ?? _modelOptions[0];
+
+            _selectedModel = selectedOption;
+
+            var index = _modelOptions.IndexOf(selectedOption);
+            if (index >= 0)
+            {
+                ModelPicker.SelectedIndex = index;
+            }
+            ModelPicker.SelectedItem = selectedOption;
+
+            if (!string.Equals(selectedOption.ModelId, currentModel, StringComparison.Ordinal))
+            {
+                _storyService.SetModel(selectedOption.ModelId);
+            }
+
+            ModelPicker.IsEnabled = true;
+        }
+        finally
+        {
+            _isInitializingModel = false;
+        }
+    }
+
     private void ConfigureCategoryPicker()
     {
         if (_categoryOptions.Count == 0)
@@ -280,10 +333,87 @@ public partial class StoryCanvasPage : ContentPage
         _ = GenerateStoryAsync(userInitiated: userInitiated);
     }
 
+    private void OnModelChanged(object? sender, EventArgs e)
+    {
+        if (ModelPicker.SelectedItem is not ModelOption option)
+        {
+            return;
+        }
+
+        if (_selectedModel is not null && string.Equals(_selectedModel.ModelId, option.ModelId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var previousModel = _selectedModel;
+        _selectedModel = option;
+
+        if (_isInitializingModel)
+        {
+            return;
+        }
+
+        try
+        {
+            _storyService.SetModel(option.ModelId);
+        }
+        catch (Exception ex)
+        {
+            _selectedModel = previousModel;
+            _ = MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                _isInitializingModel = true;
+                if (previousModel is not null)
+                {
+                    ModelPicker.SelectedItem = previousModel;
+                    var index = _modelOptions.IndexOf(previousModel);
+                    if (index >= 0)
+                    {
+                        ModelPicker.SelectedIndex = index;
+                    }
+                }
+                else
+                {
+                    ModelPicker.SelectedIndex = -1;
+                    ModelPicker.SelectedItem = null;
+                }
+                _isInitializingModel = false;
+                await DisplayAlert("Model selection failed", ex.Message, "OK");
+            });
+            return;
+        }
+
+        _ = GenerateStoryAsync(userInitiated: true);
+    }
+
     private void UpdateRegenerateButtonText()
     {
         var label = GetCategoryDisplayName(_selectedCategory);
         RegenerateButton.Text = $"Regenerate {label} story";
+    }
+
+    private string GetSelectedModelLabel()
+    {
+        if (_selectedModel is not null)
+        {
+            return _selectedModel.Label;
+        }
+
+        var currentModel = _storyService.CurrentModel;
+        if (!string.IsNullOrWhiteSpace(currentModel))
+        {
+            var option = _modelOptions.FirstOrDefault(o =>
+                string.Equals(o.ModelId, currentModel, StringComparison.OrdinalIgnoreCase));
+            if (option is not null)
+            {
+                _selectedModel = option;
+                return option.Label;
+            }
+
+            return currentModel;
+        }
+
+        return "AI";
     }
 
     private void UpdatePromptPreview()
@@ -581,6 +711,24 @@ public partial class StoryCanvasPage : ContentPage
         }
 
         return category.ToString();
+    }
+
+    private sealed class ModelOption
+    {
+        public ModelOption(string label, string modelId, string? description = null)
+        {
+            Label = label;
+            ModelId = modelId;
+            Description = description;
+        }
+
+        public string Label { get; }
+        public string ModelId { get; }
+        public string? Description { get; }
+
+        public string DisplayName => string.IsNullOrWhiteSpace(Description)
+            ? Label
+            : $"{Label} — {Description}";
     }
 
     private sealed class StoryCategoryOption
