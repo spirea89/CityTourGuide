@@ -3,21 +3,29 @@
     x:Class="CityTour.StoryCanvasPage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:models="clr-namespace:CityTour.Models"
     Padding="16">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto" RowSpacing="12">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
 
         <Label Text="New story"
                FontSize="22"
                FontAttributes="Bold" />
 
-        <Label x:Name="BuildingNameLabel"
+        <Label x:Name="PromptLabel"
                Grid.Row="1"
+               FontSize="13"
+               LineBreakMode="WordWrap"
+               Margin="0,4,0,0"
+               TextColor="{AppThemeBinding Light=#444, Dark=#DDD}" />
+
+        <Label x:Name="BuildingNameLabel"
+               Grid.Row="2"
                FontSize="14"
                LineBreakMode="WordWrap"
                TextColor="{AppThemeBinding Light=#666, Dark=#AAA}" />
 
-        <StackLayout Grid.Row="2"
+        <StackLayout Grid.Row="3"
                      Spacing="4">
             <Label Text="Story focus"
                    FontAttributes="Bold"
@@ -27,7 +35,7 @@
                     SelectedIndexChanged="OnCategoryChanged" />
         </StackLayout>
 
-        <Grid Grid.Row="3"
+        <Grid Grid.Row="4"
               ColumnDefinitions="Auto,*"
               ColumnSpacing="8">
             <ActivityIndicator x:Name="LoadingIndicator"
@@ -41,11 +49,84 @@
         </Grid>
 
         <Editor x:Name="StoryEditor"
-                Grid.Row="4"
+                Grid.Row="5"
                 Placeholder="Tweak or add your own notes here..."
                 AutoSize="TextChanges" />
 
-        <StackLayout Grid.Row="5"
+        <Label Grid.Row="6"
+               Text="Ask about this place"
+               FontSize="14"
+               FontAttributes="Bold" />
+
+        <Grid Grid.Row="7"
+              ColumnDefinitions="Auto,*"
+              ColumnSpacing="8">
+            <ActivityIndicator x:Name="ChatLoadingIndicator"
+                                VerticalOptions="Center"
+                                IsVisible="False"
+                                IsRunning="False" />
+            <Label x:Name="ChatStatusLabel"
+                   VerticalOptions="Center"
+                   LineBreakMode="WordWrap"
+                   TextColor="{AppThemeBinding Light=#555, Dark=#CCC}"
+                   Text="Ask the guide for more details about this address." />
+        </Grid>
+
+        <CollectionView x:Name="ChatCollectionView"
+                        Grid.Row="8"
+                        BackgroundColor="Transparent"
+                        SelectionMode="None"
+                        VerticalScrollBarVisibility="Never">
+            <CollectionView.ItemsLayout>
+                <LinearItemsLayout Orientation="Vertical" />
+            </CollectionView.ItemsLayout>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="models:ChatMessage">
+                    <Frame Margin="0,4"
+                           Padding="12"
+                           CornerRadius="12"
+                           HasShadow="False"
+                           BackgroundColor="{AppThemeBinding Light=#F4F4F5, Dark=#27272A}"
+                           MaximumWidthRequest="420">
+                        <Frame.Triggers>
+                            <DataTrigger TargetType="Frame"
+                                         Binding="{Binding IsUser}"
+                                         Value="True">
+                                <Setter Property="HorizontalOptions" Value="End" />
+                                <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#D1E8FF, Dark=#1F3A5F}" />
+                                <Setter Property="Margin" Value="48,4,0,4" />
+                            </DataTrigger>
+                            <DataTrigger TargetType="Frame"
+                                         Binding="{Binding IsUser}"
+                                         Value="False">
+                                <Setter Property="HorizontalOptions" Value="Start" />
+                                <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#F4F4F5, Dark=#27272A}" />
+                                <Setter Property="Margin" Value="0,4,48,4" />
+                            </DataTrigger>
+                        </Frame.Triggers>
+                        <Label Text="{Binding Message}"
+                               LineBreakMode="WordWrap"
+                               TextColor="{AppThemeBinding Light=#111, Dark=#EEE}" />
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <Grid Grid.Row="9"
+              ColumnDefinitions="*,Auto"
+              ColumnSpacing="8">
+            <Entry x:Name="ChatEntry"
+                   Placeholder="Ask a follow-up question about this address..."
+                   Completed="OnChatEntryCompleted"
+                   TextChanged="OnChatTextChanged" />
+            <Button x:Name="SendChatButton"
+                    Grid.Column="1"
+                    Text="Send"
+                    IsEnabled="False"
+                    Clicked="OnSendChatClicked" />
+        </Grid>
+
+        <StackLayout Grid.Row="10"
                      Spacing="4">
             <Label Text="Voice"
                    FontAttributes="Bold"
@@ -55,7 +136,7 @@
                     ItemDisplayBinding="{Binding DisplayName}" />
         </StackLayout>
 
-        <Grid Grid.Row="6"
+        <Grid Grid.Row="11"
               ColumnDefinitions="*,*"
               ColumnSpacing="8">
             <Button x:Name="ListenButton"
@@ -69,11 +150,11 @@
         </Grid>
 
         <Button x:Name="RegenerateButton"
-                Grid.Row="7"
+                Grid.Row="12"
                 Text="Regenerate story"
                 Clicked="OnRegenerateClicked" />
 
-        <Button Grid.Row="8"
+        <Button Grid.Row="13"
                 Text="Close"
                 Clicked="OnCloseClicked" />
     </Grid>
