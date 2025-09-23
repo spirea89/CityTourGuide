@@ -10,6 +10,8 @@ namespace CityTour.Services;
 
 public interface IAiStoryService
 {
+    string CurrentModel { get; }
+
     Task<StoryGenerationResult> GenerateStoryAsync(
         string buildingName,
         string? buildingAddress,
@@ -31,11 +33,14 @@ public interface IAiStoryService
         StoryCategory category,
         string? facts = null,
         string? language = null);
+
+    void SetModel(string model);
 }
 
 public class AiStoryService : IAiStoryService
 {
     private const string DefaultModel = "gpt-4o-mini";
+    private const string ModelPreferenceKey = "ai.story.model";
     private const string SystemMessage = "You are a creative, historically knowledgeable city tour guide. Craft short stories and responses about buildings that feel authentic, welcoming, and vivid.";
     private const string HistoryPromptTemplate = "You are a meticulous local historian. Using only facts about {address}, write a vivid, chronological ~120–150 word history highlighting founding date, name changes, 2–3 pivotal events, and significance.";
     private const string PersonalitiesPromptTemplate = "You are a culturally savvy guide. From facts on people linked to {address}, craft a ~110–140 word mini-story weaving 2–3 notable figures with full names, dates, roles, and one concrete anecdote each; avoid speculation.";
@@ -46,7 +51,7 @@ public class AiStoryService : IAiStoryService
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiStoryService> _logger;
     private readonly IApiKeyProvider _apiKeyProvider;
-    private readonly string _model;
+    private string _model;
     private string? _apiKey;
 
     public AiStoryService(HttpClient httpClient, ILogger<AiStoryService> logger, IApiKeyProvider apiKeyProvider)
@@ -55,7 +60,27 @@ public class AiStoryService : IAiStoryService
         _httpClient.Timeout = TimeSpan.FromSeconds(60);
         _logger = logger;
         _apiKeyProvider = apiKeyProvider;
-        _model = Preferences.Get("ai.story.model", DefaultModel);
+        var savedModel = Preferences.Get(ModelPreferenceKey, DefaultModel);
+        _model = string.IsNullOrWhiteSpace(savedModel) ? DefaultModel : savedModel.Trim();
+    }
+
+    public string CurrentModel => _model;
+
+    public void SetModel(string model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            throw new ArgumentException("A model name is required.", nameof(model));
+        }
+
+        var trimmed = model.Trim();
+        if (string.Equals(_model, trimmed, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _model = trimmed;
+        Preferences.Set(ModelPreferenceKey, _model);
     }
 
     public async Task<StoryGenerationResult> GenerateStoryAsync(
