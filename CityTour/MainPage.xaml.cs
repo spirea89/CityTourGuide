@@ -69,33 +69,15 @@ public partial class MainPage : ContentPage
 
         foreach (var p in places)
         {
-            var pin = new Pin
-            {
-                Label = p.Name,
-                Address = p.Address,
-                Type = PinType.Place,
-                Location = new Location(p.Latitude, p.Longitude)
-            };
-
-            pin.MarkerClicked += async (s, e) =>
-            {
-                e.HideInfoWindow = true;
-                await Shell.Current.GoToAsync($"DetailPage?id={p.Id}");
-            };
-
+            var pin = CreateStoryPin(p.Id, p.Name, p.Address, new Location(p.Latitude, p.Longitude));
             Map.Pins.Add(pin);
         }
 
         // Also show saved buildings
         foreach (var b in LoadSavedBuildings())
         {
-            Map.Pins.Add(new Pin
-            {
-                Label = $"★ {b.Name}",
-                Address = b.Address,
-                Type = PinType.Place,
-                Location = new Location(b.Latitude, b.Longitude)
-            });
+            var pin = CreateStoryPin(b.PlaceId, b.Name, b.Address, new Location(b.Latitude, b.Longitude), isSaved: true);
+            Map.Pins.Add(pin);
         }
     }
 
@@ -269,22 +251,13 @@ public partial class MainPage : ContentPage
             SaveBuilding(b);
 
             // Show a pin immediately
-            Map.Pins.Add(new Pin
-            {
-                Label = $"★ {name}",
-                Address = address,
-                Type = PinType.Place,
-                Location = new Location(lat, lng)
-            });
+            Map.Pins.Add(CreateStoryPin(placeId, name, address, new Location(lat, lng), isSaved: true));
 
             _isSelectingBuilding = false;
             SelectBuildingBtn.Text = "Select building";
 
-            // Optional confirmation
-            await DisplayAlert("Saved", "Building saved. Opening the story canvas…", "OK");
-
             // Open the empty canvas page
-            await Navigation.PushModalAsync(new StoryCanvasPage(b.PlaceId, b.Name, b.Address, _storyService));
+            await NavigateToStoryCanvasAsync(b.PlaceId, b.Name, b.Address);
 
         }
         catch (Exception ex)
@@ -340,18 +313,41 @@ public partial class MainPage : ContentPage
             var loc = new Location(place.Value.Lat, place.Value.Lng);
             Map.MoveToRegion(MapSpan.FromCenterAndRadius(loc, Distance.FromKilometers(1)));
 
-            Map.Pins.Add(new Pin
-            {
-                Label = place.Value.Name,
-                Address = place.Value.Address,
-                Type = PinType.Place,
-                Location = loc
-            });
+            var pin = CreateStoryPin(placeId, place.Value.Name, place.Value.Address, loc);
+            Map.Pins.Add(pin);
+
+            await NavigateToStoryCanvasAsync(placeId, place.Value.Name, place.Value.Address);
         }
         catch (Exception ex)
         {
             await DisplayAlert("Details error", ex.Message, "OK");
         }
+    }
+
+    private Pin CreateStoryPin(string placeId, string buildingName, string? buildingAddress, Location location, bool isSaved = false)
+    {
+        var address = buildingAddress ?? string.Empty;
+
+        var pin = new Pin
+        {
+            Label = isSaved ? $"★ {buildingName}" : buildingName,
+            Address = address,
+            Type = PinType.Place,
+            Location = location
+        };
+
+        pin.MarkerClicked += async (s, e) =>
+        {
+            e.HideInfoWindow = true;
+            await NavigateToStoryCanvasAsync(placeId, buildingName, address);
+        };
+
+        return pin;
+    }
+
+    private Task NavigateToStoryCanvasAsync(string placeId, string buildingName, string buildingAddress)
+    {
+        return Navigation.PushModalAsync(new StoryCanvasPage(placeId, buildingName, buildingAddress, _storyService));
     }
 
     private async Task<string?> GetFirstPlaceIdAsync(string input)
