@@ -332,7 +332,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
                     role = "system",
                     content = new object[]
                     {
-                        new { type = "text", text = SystemMessage }
+                        new { type = "input_text", text = SystemMessage }
                     }
                 },
                 new
@@ -340,7 +340,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
                     role = "user",
                     content = new object[]
                     {
-                        new { type = "text", text = prompt }
+                        new { type = "input_text", text = prompt }
                     }
                 }
             },
