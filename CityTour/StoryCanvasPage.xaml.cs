@@ -104,7 +104,6 @@ public partial class StoryCanvasPage : ContentPage
         StoryEditor.TextChanged += OnStoryTextChanged;
         UpdateAudioControls();
         UpdateChatControls();
-        UpdateStreetViewSection();
     }
 
     protected override void OnAppearing()
@@ -535,65 +534,6 @@ public partial class StoryCanvasPage : ContentPage
             ChatStatusLabel.Text = message;
             UpdateChatControls();
         });
-    }
-
-    private void UpdateStreetViewSection()
-    {
-        if (_latitude is not double latitude || _longitude is not double longitude)
-        {
-            ShowStreetViewMessage("Street View is not available for this location.");
-            return;
-        }
-
-        var apiKey = _apiKeys.GoogleMapsApiKey;
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            apiKey = _apiKeys.GooglePlacesApiKey;
-        }
-
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            ShowStreetViewMessage("Add a Google Maps or Places API key to view Street View for this address.");
-            return;
-        }
-
-        var html = BuildStreetViewHtml(apiKey, latitude, longitude);
-        StreetViewWebView.Source = new HtmlWebViewSource { Html = html };
-        StreetViewWebView.IsVisible = true;
-        StreetViewStatusLabel.IsVisible = false;
-    }
-
-    private void ShowStreetViewMessage(string message)
-    {
-        StreetViewWebView.Source = null;
-        StreetViewWebView.IsVisible = false;
-        StreetViewStatusLabel.IsVisible = true;
-        StreetViewStatusLabel.Text = message;
-    }
-
-    private static string BuildStreetViewHtml(string apiKey, double latitude, double longitude)
-    {
-        var encodedKey = Uri.EscapeDataString(apiKey);
-        var lat = latitude.ToString(CultureInfo.InvariantCulture);
-        var lng = longitude.ToString(CultureInfo.InvariantCulture);
-
-        return $@"<!DOCTYPE html>
-<html>
-<head>
-<meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
-<style>
-html, body {{ margin: 0; padding: 0; background-color: transparent; }}
-iframe {{ border: 0; width: 100%; height: 100%; border-radius: 12px; }}
-</style>
-</head>
-<body>
-<iframe allowfullscreen
-        loading=""lazy""
-        referrerpolicy=""no-referrer-when-downgrade""
-        src=""https://www.google.com/maps/embed/v1/streetview?key={encodedKey}&location={lat},{lng}&heading=210&pitch=0&fov=90"">
-</iframe>
-</body>
-</html>";
     }
 
     private void UpdateChatControls()

@@ -4,6 +4,7 @@ using CityTour.Services;
 using CityTour.Models;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
@@ -29,6 +30,8 @@ public partial class MainPage : ContentPage
 
     // Building selection mode
     private bool _isSelectingBuilding = false;
+    private bool _isStreetViewVisible;
+    private Location? _streetViewLocation;
     private const string SavedBuildingsKey = "citytour.saved_buildings";
 
     public MainPage(PlaceService service, IAiStoryService storyService, IApiKeyProvider apiKeyProvider)
@@ -49,6 +52,7 @@ public partial class MainPage : ContentPage
         // Center on Vienna
         var vienna = new Location(48.2082, 16.3738);
         Map.MoveToRegion(MapSpan.FromCenterAndRadius(vienna, Distance.FromKilometers(3)));
+        SetStreetViewLocation(vienna);
 
         // Draw pins
         RefreshPins(_allPlaces);
@@ -175,6 +179,98 @@ public partial class MainPage : ContentPage
     {
         var vienna = new Location(48.2082, 16.3738);
         Map.MoveToRegion(MapSpan.FromCenterAndRadius(vienna, Distance.FromKilometers(3)));
+        SetStreetViewLocation(vienna);
+    }
+
+    private void OnStreetViewToggleClicked(object? sender, EventArgs e)
+    {
+        _isStreetViewVisible = !_isStreetViewVisible;
+        UpdateStreetViewPanel();
+    }
+
+    private void UpdateStreetViewPanel()
+    {
+        StreetViewPanel.IsVisible = _isStreetViewVisible;
+        StreetViewToggleButton.Text = _isStreetViewVisible ? "Hide street view" : "Show street view";
+
+        if (_isStreetViewVisible)
+        {
+            RefreshStreetView();
+        }
+    }
+
+    private void RefreshStreetView()
+    {
+        if (!_isStreetViewVisible)
+        {
+            return;
+        }
+
+        if (_streetViewLocation is not Location location)
+        {
+            ShowStreetViewMessage("Search for a place or tap the map to preview Street View here.");
+            return;
+        }
+
+        var apiKey = _apiKeys.GoogleMapsApiKey;
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            apiKey = _apiKeys.GooglePlacesApiKey;
+        }
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            ShowStreetViewMessage("Add a Google Maps or Places API key to view Street View.");
+            return;
+        }
+
+        var html = BuildStreetViewHtml(apiKey, location.Latitude, location.Longitude);
+        StreetViewWebView.Source = new HtmlWebViewSource { Html = html };
+        StreetViewWebView.IsVisible = true;
+        StreetViewStatusLabel.IsVisible = false;
+    }
+
+    private void ShowStreetViewMessage(string message)
+    {
+        StreetViewWebView.Source = null;
+        StreetViewWebView.IsVisible = false;
+        StreetViewStatusLabel.Text = message;
+        StreetViewStatusLabel.IsVisible = true;
+    }
+
+    private void SetStreetViewLocation(Location location)
+    {
+        _streetViewLocation = new Location(location.Latitude, location.Longitude);
+
+        if (_isStreetViewVisible)
+        {
+            RefreshStreetView();
+        }
+    }
+
+    private static string BuildStreetViewHtml(string apiKey, double latitude, double longitude)
+    {
+        var encodedKey = Uri.EscapeDataString(apiKey);
+        var lat = latitude.ToString(CultureInfo.InvariantCulture);
+        var lng = longitude.ToString(CultureInfo.InvariantCulture);
+
+        return $@"<!DOCTYPE html>
+<html>
+<head>
+<meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+<style>
+html, body {{ margin: 0; padding: 0; background-color: transparent; }}
+iframe {{ border: 0; width: 100%; height: 100%; border-radius: 12px; }}
+</style>
+</head>
+<body>
+<iframe allowfullscreen
+        loading=""lazy""
+        referrerpolicy=""no-referrer-when-downgrade""
+        src=""https://www.google.com/maps/embed/v1/streetview?key={encodedKey}&location={lat},{lng}&heading=210&pitch=0&fov=90""
+></iframe>
+</body>
+</html>";
     }
 
     private async void OnClearStoriesClicked(object? sender, EventArgs e)
@@ -218,9 +314,11 @@ public partial class MainPage : ContentPage
 
     private async void OnMapClicked(object? sender, MapClickedEventArgs e)
     {
+        var loc = e.Location;
+        SetStreetViewLocation(loc);
+
         if (!_isSelectingBuilding) return;
 
-        var loc = e.Location;
         try
         {
             var place = await ReverseGeocodeAsync(loc.Latitude, loc.Longitude);
@@ -234,6 +332,8 @@ public partial class MainPage : ContentPage
 
             var (placeId, name, address, lat, lng) = place.Value;
             var displayAddress = AddressFormatter.GetDisplayAddress(address) ?? address;
+
+            SetStreetViewLocation(new Location(lat, lng));
 
             var confirm = await DisplayAlert("Save this building?",
                 $"{name}\n{displayAddress}", "Save", "Cancel");
@@ -313,6 +413,7 @@ public partial class MainPage : ContentPage
 
             var loc = new Location(place.Value.Lat, place.Value.Lng);
             Map.MoveToRegion(MapSpan.FromCenterAndRadius(loc, Distance.FromKilometers(1)));
+            SetStreetViewLocation(loc);
 
             var pin = CreateStoryPin(placeId, place.Value.Name, place.Value.Address, loc);
             Map.Pins.Add(pin);
@@ -342,6 +443,7 @@ public partial class MainPage : ContentPage
         pin.MarkerClicked += async (s, e) =>
         {
             e.HideInfoWindow = true;
+            SetStreetViewLocation(pin.Location);
             await NavigateToStoryCanvasAsync(placeId, buildingName, buildingAddress, parsedAddress,
                 latitude: pin.Location.Latitude, longitude: pin.Location.Longitude);
         };
