@@ -4,6 +4,8 @@ import { OverpassProvider } from "../providers/overpass.js";
 import type { OverpassFeature } from "../providers/overpass.js";
 import { WikidataProvider } from "../providers/wikidata.js";
 import type { WikidataFacts } from "../providers/wikidata.js";
+import { WikipediaProvider } from "../providers/wikipedia.js";
+import type { WikipediaSummary } from "../providers/wikipedia.js";
 
 export type GetBuildingFactsInput = {
   address?: string;
@@ -14,9 +16,10 @@ export type GetBuildingFactsInput = {
   nowIso?: string;
   overpassEndpoint?: string;
   userAgent?: string;
+  wikipediaApiKey?: string;
 };
 
-type ProviderOverrides = Partial<{ geocoder: any; overpass: any; wikidata: any }>;
+type ProviderOverrides = Partial<{ geocoder: any; overpass: any; wikidata: any; wikipedia: any }>;
 
 const providerOverrides: ProviderOverrides = {};
 
@@ -44,6 +47,14 @@ export const __testOnly = {
         delete providerOverrides.wikidata;
       } else {
         providerOverrides.wikidata = value;
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(p, "wikipedia")) {
+      const value = (p as any).wikipedia;
+      if (value == null) {
+        delete providerOverrides.wikipedia;
+      } else {
+        providerOverrides.wikipedia = value;
       }
     }
   },
@@ -250,6 +261,8 @@ export async function getBuildingFacts(input: GetBuildingFactsInput): Promise<Bu
   const geocoderProvider = providerOverrides.geocoder ?? new NominatimGeocoder({ userAgent: input.userAgent });
   const overpassProvider = providerOverrides.overpass ?? new OverpassProvider(input.overpassEndpoint, { userAgent: input.userAgent });
   const wikidataProvider = providerOverrides.wikidata ?? new WikidataProvider({ userAgent: input.userAgent });
+  const wikipediaProvider =
+    providerOverrides.wikipedia ?? new WikipediaProvider({ userAgent: input.userAgent, apiKey: input.wikipediaApiKey });
 
   let lat = typeof input.lat === "number" ? input.lat : undefined;
   let lon = typeof input.lon === "number" ? input.lon : undefined;
@@ -478,6 +491,62 @@ export async function getBuildingFacts(input: GetBuildingFactsInput): Promise<Bu
     }
   }
 
+  let wikipediaSummary: WikipediaSummary | null = null;
+  let attemptedWikipediaSummary = false;
+  if (wikipediaProvider && typeof wikipediaProvider.fetchSummary === "function") {
+    const attempts: Array<{ title: string; lang: string }> = [];
+    if (wikidataFacts?.wikipediaTitle) {
+      attempts.push({ title: wikidataFacts.wikipediaTitle, lang });
+    }
+    if (osmWikipedia) {
+      attempts.push({ title: osmWikipedia.title, lang: osmWikipedia.lang });
+    }
+    const seen = new Set<string>();
+    for (const attempt of attempts) {
+      const attemptKey = `${attempt.lang}:${attempt.title}`.toLowerCase();
+      if (seen.has(attemptKey)) {
+        continue;
+      }
+      seen.add(attemptKey);
+      attemptedWikipediaSummary = true;
+      try {
+        const summary = await wikipediaProvider.fetchSummary(attempt.title, attempt.lang);
+        if (summary) {
+          wikipediaSummary = summary;
+          break;
+        }
+      } catch {
+        attemptedWikipediaSummary = true;
+      }
+    }
+  }
+  if (!wikipediaSummary && attemptedWikipediaSummary) {
+    notesSet.add("Wikipedia summary could not be retrieved for the linked article.");
+  }
+  if (wikipediaSummary) {
+    const summaryText = wikipediaSummary.extract || wikipediaSummary.description;
+    const trimmedSummary = summaryText ? trimWords(summaryText, 80) : null;
+    const evidence = makeEvidence({
+      title: wikipediaSummary.title,
+      url: wikipediaSummary.url,
+      accessDate: nowIso,
+      snippet: summaryText || undefined,
+      publishDate: wikipediaSummary.lastModified ?? null,
+      qualityOverride: "medium",
+      whyOverride: "Wikipedia article summary (community-maintained).",
+    });
+    const normalized = normalizeWikipediaValue(
+      `${wikipediaSummary.lang}:${wikipediaSummary.normalizedTitle}`,
+      wikipediaSummary.lang
+    );
+    if (normalized) {
+      addCandidate("wikipedia_title", normalized.value, evidence);
+    }
+    if (trimmedSummary) {
+      addCandidate("wikipedia_summary", trimmedSummary, evidence);
+    }
+  }
+
   const notesBeforeFacts = notesSet.size;
   let hasConflict = false;
 
@@ -623,6 +692,8 @@ function buildFact(
       return { key: "wikidata_qid", value: String(value), evidence, confidence };
     case "wikipedia_title":
       return { key: "wikipedia_title", value: String(value), evidence, confidence };
+    case "wikipedia_summary":
+      return { key: "wikipedia_summary", value: String(value), evidence, confidence };
     case "construction_start":
       return { key: "construction_start", value: String(value), evidence, confidence };
     case "construction_end":
