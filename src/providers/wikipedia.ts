@@ -13,28 +13,53 @@ type WikipediaProviderOptions = {
   apiKey?: string;
 };
 
+type FetchSummaryOptions = {
+  address?: string;
+};
+
 export class WikipediaProvider {
   constructor(private readonly opts: WikipediaProviderOptions = {}) {}
 
-  async fetchSummary(title: string, lang: string): Promise<WikipediaSummary | null> {
-    const cleanedTitle = typeof title === "string" ? title.trim() : "";
-    if (!cleanedTitle) {
+  async fetchSummary(
+    title: string,
+    lang: string,
+    options: FetchSummaryOptions = {}
+  ): Promise<WikipediaSummary | null> {
+    const safeLang = this.normalizeLang(lang);
+    const candidates = this.buildTitleCandidates(title, options.address);
+    if (!candidates.length) {
       return null;
     }
-    const safeLang = this.normalizeLang(lang);
-    const targetTitle = cleanedTitle.replace(/\s+/g, "_");
-    const encodedTitle = encodeURIComponent(targetTitle);
 
-    const primaryUrl = `https://api.wikimedia.org/core/v1/wikipedia/${safeLang}/page/summary/${encodedTitle}`;
-    const summaryFromPrimary = await this.tryFetch(primaryUrl, safeLang, cleanedTitle, {
-      includeApiKey: true,
-    });
-    if (summaryFromPrimary) {
-      return summaryFromPrimary;
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      const normalized = candidate.replace(/\s+/g, "_");
+      if (!normalized) {
+        continue;
+      }
+      const key = `${safeLang}:${normalized.toLowerCase()}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      const encodedTitle = encodeURIComponent(normalized);
+
+      const primaryUrl = `https://api.wikimedia.org/core/v1/wikipedia/${safeLang}/page/summary/${encodedTitle}`;
+      const summaryFromPrimary = await this.tryFetch(primaryUrl, safeLang, candidate, {
+        includeApiKey: true,
+      });
+      if (summaryFromPrimary) {
+        return summaryFromPrimary;
+      }
+
+      const fallbackUrl = `https://${safeLang}.wikipedia.org/api/rest_v1/page/summary/${encodedTitle}`;
+      const fallback = await this.tryFetch(fallbackUrl, safeLang, candidate, { includeApiKey: false });
+      if (fallback) {
+        return fallback;
+      }
     }
 
-    const fallbackUrl = `https://${safeLang}.wikipedia.org/api/rest_v1/page/summary/${encodedTitle}`;
-    return this.tryFetch(fallbackUrl, safeLang, cleanedTitle, { includeApiKey: false });
+    return null;
   }
 
   private normalizeLang(lang: string | undefined): string {
@@ -44,6 +69,102 @@ export class WikipediaProvider {
     }
     const safe = trimmed.replace(/[^a-z0-9_-]/gi, "");
     return safe || "en";
+  }
+
+  private buildTitleCandidates(title: string, address?: string): string[] {
+    const candidates: string[] = [];
+    const seen = new Set<string>();
+    const addCandidate = (value: string | null | undefined) => {
+      const cleaned = this.cleanCandidate(value);
+      if (!cleaned) {
+        return;
+      }
+      const key = cleaned.toLowerCase();
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      candidates.push(cleaned);
+    };
+
+    const baseTitle = this.cleanCandidate(title);
+    addCandidate(baseTitle);
+
+    const cleanedAddress = this.cleanCandidate(address);
+    if (!cleanedAddress) {
+      return candidates;
+    }
+
+    const parts = this.parseAddressParts(cleanedAddress);
+    addCandidate(cleanedAddress);
+    addCandidate(parts.street);
+    addCandidate(parts.city);
+    addCandidate(parts.country);
+
+    if (parts.street && parts.city) {
+      addCandidate(`${parts.street}, ${parts.city}`);
+      addCandidate(`${parts.street} ${parts.city}`);
+    }
+
+    if (baseTitle && parts.city) {
+      addCandidate(`${baseTitle}, ${parts.city}`);
+      addCandidate(`${baseTitle} (${parts.city})`);
+      addCandidate(`${baseTitle} ${parts.city}`);
+    }
+
+    if (baseTitle && parts.country) {
+      addCandidate(`${baseTitle}, ${parts.country}`);
+      addCandidate(`${baseTitle} (${parts.country})`);
+    }
+
+    return candidates;
+  }
+
+  private parseAddressParts(address: string): {
+    street?: string;
+    city?: string;
+    country?: string;
+  } {
+    const segments = address
+      .split(",")
+      .map((segment) => this.cleanCandidate(segment))
+      .filter((segment): segment is string => Boolean(segment));
+
+    if (!segments.length) {
+      return {};
+    }
+
+    const street = segments[0];
+    let city: string | undefined;
+    let country: string | undefined;
+
+    if (segments.length >= 3) {
+      country = segments[segments.length - 1];
+      city = segments[segments.length - 2];
+    } else if (segments.length === 2) {
+      city = segments[1];
+    }
+
+    const normalizedCity = city ? this.stripPostalCode(city) : undefined;
+    const normalizedCountry = country ? this.stripPostalCode(country) : undefined;
+
+    return {
+      street,
+      city: normalizedCity || city,
+      country: normalizedCountry || country,
+    };
+  }
+
+  private cleanCandidate(value: string | null | undefined): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const trimmed = value.replace(/\s+/g, " ").trim();
+    return trimmed.length ? trimmed : null;
+  }
+
+  private stripPostalCode(value: string): string {
+    return value.replace(/\b\d{3,5}\b/g, " ").replace(/\s{2,}/g, " ").trim();
   }
 
   private async tryFetch(
