@@ -39,10 +39,7 @@ public partial class StoryCanvasPage : ContentPage
     };
     private readonly List<ModelOption> _modelOptions = new()
     {
-        new("GPT-4o mini", "gpt-4o-mini", "Fast and cost-efficient"),
-        new("GPT-4o", "gpt-4o", "Balanced quality and cost"),
-        new("GPT-4.1 mini", "gpt-4.1-mini", "Smarter reasoning, moderate speed"),
-        new("GPT-4.1", "gpt-4.1", "Highest quality responses")
+        new("Wikipedia summary", "wikipedia-summary", "Uses Wikipedia extracts alongside verified facts.")
     };
     private ModelOption? _selectedModel;
     private bool _isInitializingModel;
@@ -306,7 +303,7 @@ public partial class StoryCanvasPage : ContentPage
                 _storyService.SetModel(selectedOption.ModelId);
             }
 
-            ModelPicker.IsEnabled = true;
+            ModelPicker.IsEnabled = _modelOptions.Count > 1;
         }
         finally
         {
@@ -431,11 +428,9 @@ public partial class StoryCanvasPage : ContentPage
                 _selectedModel = option;
                 return option.Label;
             }
-
-            return currentModel;
         }
 
-        return "AI";
+        return _modelOptions.Count > 0 ? _modelOptions[0].Label : "Wikipedia";
     }
 
     private void UpdatePromptPreview()
@@ -630,11 +625,11 @@ public partial class StoryCanvasPage : ContentPage
         var prompt = PromptLabel.Text;
         if (string.IsNullOrWhiteSpace(prompt))
         {
-            await DisplayAlert("Story prompt", "The story prompt will be available after the first story is generated.", "OK");
+            await DisplayAlert("Story sources", "Source details will be available after the first story is generated.", "OK");
             return;
         }
 
-        await DisplayAlert("Story prompt", prompt, "Close");
+        await DisplayAlert("Story sources", prompt, "Close");
     }
 
     private void OnSendChatClicked(object? sender, EventArgs e)

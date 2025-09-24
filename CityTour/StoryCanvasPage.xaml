@@ -17,11 +17,11 @@
                    FontAttributes="Bold" />
             <Button x:Name="PromptInfoButton"
                     Grid.Column="1"
-                    Text="Story prompt"
+                    Text="Story sources"
                     FontSize="12"
                     Padding="12,6"
                     Clicked="OnPromptInfoClicked"
-                    SemanticProperties.Description="Show the AI prompt that was used to generate this story."
+                    SemanticProperties.Description="Show the sources used to generate this story."
                     IsEnabled="False" />
         </Grid>
 
@@ -51,7 +51,7 @@
 
         <StackLayout Grid.Row="4"
                      Spacing="4">
-            <Label Text="AI model"
+            <Label Text="Story source"
                    FontAttributes="Bold"
                    FontSize="14" />
             <Picker x:Name="ModelPicker"

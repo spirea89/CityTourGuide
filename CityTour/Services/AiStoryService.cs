@@ -1,10 +1,9 @@
+using System;
 using System.Globalization;
-using System.Net.Http.Headers;
 using System.Text;
-using System.Text.Json;
 using CityTour.Models;
-using Microsoft.Maui.Storage;
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.Storage;
 
 namespace CityTour.Services;
 
@@ -39,79 +38,18 @@ public interface IAiStoryService
 
 public class AiStoryService : IAiStoryService
 {
-    private const string DefaultModel = "gpt-4o-mini";
+    private const string DefaultModel = "wikipedia-summary";
     private const string ModelPreferenceKey = "ai.story.model";
-    private const string SystemMessage = """
-You are a creative yet trustworthy city tour guide. Base every response strictly on the verified facts supplied by the user. If the prompt says information is missing, acknowledge the gap instead of inventing details. Keep the tone welcoming and vivid while staying factual.
-""";
-    private const string HistoryPromptTemplate = """
-You are a meticulous local historian introducing visitors to {building_name} at {address}. Write the story in {language}.
 
-Work only with the verified facts listed below. If a detail is absent, say so rather than guessing.
-
-FACTS:
-{facts}
-
-TASK:
-Write a chronological 120–150 word history that highlights the founding date, any name changes, two to three pivotal events, and why the place matters today. Keep the tone warm but precise.
-""";
-    private const string PersonalitiesPromptTemplate = """
-You are a culturally savvy guide explaining the people connected to {building_name} at {address}. Respond in {language}.
-
-Use only the verified facts below. If information about a figure is missing, be transparent about the uncertainty.
-
-FACTS:
-{facts}
-
-TASK:
-Craft a 110–140 word mini-story that weaves in two to three notable figures with full names, relevant dates, their roles, and one concrete anecdote each.
-""";
-    private const string ArchitecturePromptTemplate = """
-You are an architect talking to curious visitors about {building_name} at {address}. Answer in {language}.
-
-Ground every observation in the verified facts provided. Do not speculate about elements that are not documented.
-
-FACTS:
-{facts}
-
-TASK:
-Describe the site's architectural style, architect, era, materials, notable façade or interior details, significant alterations, and two street-level features to notice in roughly 120–150 words.
-""";
-    private const string TodayPromptTemplate = """
-You are a practical local host briefing visitors about {building_name} at {address}. Respond in {language}.
-
-Rely only on the verified facts below. If a requested detail is missing, clearly note that it is not documented.
-
-FACTS:
-{facts}
-
-TASK:
-Summarize in 90–120 words the current purpose or occupants, public access details (such as hours, ticketing, accessibility), photo or etiquette guidance, and one nearby tip.
-""";
-    private const string KidsPromptTemplate = """
-You are a playful storyteller for children aged 6–10 visiting {building_name} at {address}. Tell the tale in {language}.
-
-Stick to the verified facts. Highlight what is known and gently mention when a detail is unknown.
-
-FACTS:
-{facts}
-
-TASK:
-Tell a cheerful 90–110 word story using simple sentences, fun comparisons or sounds, one exciting fact from the list, no frightening content, and end with a question that invites kids to spot something when they arrive.
-""";
-
-    private readonly HttpClient _httpClient;
     private readonly ILogger<AiStoryService> _logger;
-    private readonly IApiKeyProvider _apiKeyProvider;
+    private readonly IWikipediaService _wikipediaService;
     private string _model;
-    private string? _apiKey;
 
-    public AiStoryService(HttpClient httpClient, ILogger<AiStoryService> logger, IApiKeyProvider apiKeyProvider)
+    public AiStoryService(ILogger<AiStoryService> logger, IWikipediaService wikipediaService)
     {
-        _httpClient = httpClient;
-        _httpClient.Timeout = TimeSpan.FromSeconds(60);
-        _logger = logger;
-        _apiKeyProvider = apiKeyProvider;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _wikipediaService = wikipediaService ?? throw new ArgumentNullException(nameof(wikipediaService));
+
         var savedModel = Preferences.Get(ModelPreferenceKey, DefaultModel);
         _model = string.IsNullOrWhiteSpace(savedModel) ? DefaultModel : savedModel.Trim();
     }
@@ -126,12 +64,17 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         }
 
         var trimmed = model.Trim();
-        if (string.Equals(_model, trimmed, StringComparison.Ordinal))
+        if (!string.Equals(trimmed, DefaultModel, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Only the Wikipedia story source is currently supported.");
+        }
+
+        if (string.Equals(_model, trimmed, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
-        _model = trimmed;
+        _model = DefaultModel;
         Preferences.Set(ModelPreferenceKey, _model);
     }
 
@@ -148,10 +91,74 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
             throw new ArgumentException("A building name or address is required.", nameof(buildingName));
         }
 
-        var prompt = BuildStoryPrompt(buildingName, buildingAddress, category, facts, language);
-        var story = await SendChatCompletionAsync(prompt, 0.8, 600, "story", cancellationToken);
+        var resolvedFacts = ResolveFacts(facts);
+        var resolvedName = ResolveBuildingName(buildingName, buildingAddress);
+        var resolvedAddress = ResolveAddress(buildingAddress);
+        var resolvedLanguage = ResolveLanguage(language);
+        var prompt = BuildPromptFromResolved(resolvedName, resolvedAddress, category, resolvedFacts, resolvedLanguage);
 
-        return new StoryGenerationResult(story, prompt);
+        var summary = await FetchWikipediaSummaryAsync(buildingName, buildingAddress, cancellationToken);
+        var story = BuildStoryFromSources(resolvedName, resolvedAddress, category, resolvedFacts, summary);
+        var promptWithSummary = AppendSummaryToPrompt(prompt, summary);
+
+        return new StoryGenerationResult(story, promptWithSummary);
+    }
+
+    public async Task<string> AskAddressDetailsAsync(
+        string buildingName,
+        string? buildingAddress,
+        string? currentStory,
+        string question,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(buildingName) && string.IsNullOrWhiteSpace(buildingAddress))
+        {
+            throw new ArgumentException("A building name or address is required.", nameof(buildingName));
+        }
+
+        if (string.IsNullOrWhiteSpace(question))
+        {
+            throw new ArgumentException("A question is required.", nameof(question));
+        }
+
+        _ = currentStory;
+
+        var resolvedName = ResolveBuildingName(buildingName, buildingAddress);
+        var resolvedAddress = ResolveAddress(buildingAddress);
+        var summary = await FetchWikipediaSummaryAsync(buildingName, buildingAddress, cancellationToken);
+
+        if (summary is null)
+        {
+            var locationLabel = BuildLocationLabel(resolvedName, resolvedAddress);
+            return $"Wikipedia does not currently provide additional details about {locationLabel}.";
+        }
+
+        var builder = new StringBuilder();
+        var location = BuildLocationLabel(resolvedName, resolvedAddress);
+        builder.AppendLine($"Wikipedia may not directly answer \"{question}\", but here is the available overview of {location}:");
+
+        var extract = !string.IsNullOrWhiteSpace(summary.Extract)
+            ? summary.Extract!.Trim()
+            : summary.Description?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(extract))
+        {
+            builder.AppendLine();
+            builder.AppendLine(extract);
+        }
+        else
+        {
+            builder.AppendLine();
+            builder.AppendLine("The article does not contain a readable summary yet.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(summary.Url))
+        {
+            builder.AppendLine();
+            builder.AppendLine($"Source: {summary.Url}");
+        }
+
+        return builder.ToString().Trim();
     }
 
     public string BuildStoryPrompt(
@@ -161,30 +168,230 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         string? facts = null,
         string? language = null)
     {
-        var template = GetPromptTemplate(category);
         var resolvedFacts = ResolveFacts(facts);
         var resolvedName = ResolveBuildingName(buildingName, buildingAddress);
         var resolvedAddress = ResolveAddress(buildingAddress);
         var resolvedLanguage = ResolveLanguage(language);
 
-        return template
-            .Replace("{facts}", resolvedFacts, StringComparison.Ordinal)
-            .Replace("{building_name}", resolvedName, StringComparison.Ordinal)
-            .Replace("{address}", resolvedAddress, StringComparison.Ordinal)
-            .Replace("{language}", resolvedLanguage, StringComparison.Ordinal);
+        return BuildPromptFromResolved(resolvedName, resolvedAddress, category, resolvedFacts, resolvedLanguage);
     }
 
-    private static string GetPromptTemplate(StoryCategory category)
+    private static string BuildPromptFromResolved(
+        string resolvedName,
+        string resolvedAddress,
+        StoryCategory category,
+        string resolvedFacts,
+        string resolvedLanguage)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Story inputs");
+        builder.AppendLine("-------------");
+        builder.AppendLine("Source: Wikipedia summaries and verified facts.");
+        builder.AppendLine($"Focus: {GetCategoryLabel(category)}");
+        builder.AppendLine($"Building: {resolvedName}");
+
+        if (!string.IsNullOrWhiteSpace(resolvedAddress) && !string.Equals(resolvedAddress, "unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.AppendLine($"Address hint: {resolvedAddress}");
+        }
+
+        builder.AppendLine($"Preferred language: {resolvedLanguage}");
+        builder.AppendLine();
+        builder.AppendLine("Verified facts:");
+        builder.AppendLine(resolvedFacts);
+
+        return builder.ToString().Trim();
+    }
+
+    private async Task<WikipediaSummary?> FetchWikipediaSummaryAsync(
+        string buildingName,
+        string? buildingAddress,
+        CancellationToken cancellationToken)
+    {
+        var queryName = string.IsNullOrWhiteSpace(buildingName)
+            ? (buildingAddress ?? string.Empty)
+            : buildingName.Trim();
+        var queryAddress = string.IsNullOrWhiteSpace(buildingAddress) ? null : buildingAddress.Trim();
+
+        try
+        {
+            return await _wikipediaService.FetchSummaryAsync(
+                queryName,
+                queryAddress,
+                cancellationToken: cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch Wikipedia summary for {Name} / {Address}", queryName, queryAddress);
+            throw;
+        }
+    }
+
+    private static string BuildStoryFromSources(
+        string resolvedName,
+        string resolvedAddress,
+        StoryCategory category,
+        string resolvedFacts,
+        WikipediaSummary? summary)
+    {
+        var builder = new StringBuilder();
+        var location = BuildLocationLabel(resolvedName, resolvedAddress);
+        builder.AppendLine(GetCategoryIntroduction(category, location, summary));
+        builder.AppendLine();
+
+        var extract = !string.IsNullOrWhiteSpace(summary?.Extract)
+            ? summary!.Extract!.Trim()
+            : summary?.Description?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(extract))
+        {
+            builder.AppendLine(extract!);
+        }
+        else
+        {
+            builder.AppendLine("Wikipedia does not currently offer a summary for this place. Rely on the verified facts below when sharing details.");
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Verified facts:");
+        builder.AppendLine(resolvedFacts);
+
+        if (summary is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(summary.Url))
+            {
+                builder.AppendLine();
+                builder.AppendLine($"Source: {summary.Url}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(summary.LastModified))
+            {
+                builder.AppendLine($"Last updated on Wikipedia: {summary.LastModified}");
+            }
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    private static string AppendSummaryToPrompt(string prompt, WikipediaSummary? summary)
+    {
+        if (summary is null)
+        {
+            return prompt;
+        }
+
+        var builder = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(prompt))
+        {
+            builder.AppendLine(prompt.Trim());
+            builder.AppendLine();
+        }
+
+        builder.AppendLine("Wikipedia article snapshot:");
+
+        if (!string.IsNullOrWhiteSpace(summary.Title))
+        {
+            builder.AppendLine($"Title: {summary.Title}");
+        }
+
+        var extract = !string.IsNullOrWhiteSpace(summary.Extract)
+            ? summary.Extract!.Trim()
+            : summary.Description?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(extract))
+        {
+            builder.AppendLine(extract!);
+        }
+        else
+        {
+            builder.AppendLine("No readable summary was provided.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(summary.Url))
+        {
+            builder.AppendLine($"Source: {summary.Url}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(summary.LastModified))
+        {
+            builder.AppendLine($"Last modified: {summary.LastModified}");
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    private static string GetCategoryLabel(StoryCategory category)
     {
         return category switch
         {
-            StoryCategory.History => HistoryPromptTemplate,
-            StoryCategory.Personalities => PersonalitiesPromptTemplate,
-            StoryCategory.Architecture => ArchitecturePromptTemplate,
-            StoryCategory.Today => TodayPromptTemplate,
-            StoryCategory.Kids => KidsPromptTemplate,
-            _ => HistoryPromptTemplate
+            StoryCategory.History => "History",
+            StoryCategory.Personalities => "Personalities",
+            StoryCategory.Architecture => "Architecture",
+            StoryCategory.Today => "Today",
+            StoryCategory.Kids => "Kids",
+            _ => category.ToString()
         };
+    }
+
+    private static string GetCategoryIntroduction(StoryCategory category, string location, WikipediaSummary? summary)
+    {
+        var descriptor = BuildArticleDescriptor(summary);
+        return category switch
+        {
+            StoryCategory.History => $"Historical snapshot of {location} based on {descriptor}.",
+            StoryCategory.Personalities => $"People connected to {location} according to {descriptor}.",
+            StoryCategory.Architecture => $"Architectural notes for {location} drawn from {descriptor}.",
+            StoryCategory.Today => $"How {location} is used today according to {descriptor}.",
+            StoryCategory.Kids => $"Friendly highlights about {location} inspired by {descriptor}.",
+            _ => $"Overview of {location} based on {descriptor}."
+        };
+    }
+
+    private static string BuildArticleDescriptor(WikipediaSummary? summary)
+    {
+        if (summary is null)
+        {
+            return "available Wikipedia sources";
+        }
+
+        if (string.IsNullOrWhiteSpace(summary.Language))
+        {
+            return "the Wikipedia article";
+        }
+
+        try
+        {
+            var culture = CultureInfo.GetCultureInfo(summary.Language);
+            return $"the {culture.EnglishName} Wikipedia article";
+        }
+        catch (CultureNotFoundException)
+        {
+            return $"the {summary.Language.ToUpperInvariant()} Wikipedia article";
+        }
+    }
+
+    private static string BuildLocationLabel(string resolvedName, string resolvedAddress)
+    {
+        var name = string.IsNullOrWhiteSpace(resolvedName) ? "this place" : resolvedName.Trim();
+        var address = string.IsNullOrWhiteSpace(resolvedAddress) || string.Equals(resolvedAddress, "unknown", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : resolvedAddress.Trim();
+
+        if (string.IsNullOrWhiteSpace(address) || string.Equals(name, address, StringComparison.OrdinalIgnoreCase))
+        {
+            return name;
+        }
+
+        if (string.Equals(name, "unknown building", StringComparison.OrdinalIgnoreCase))
+        {
+            return address;
+        }
+
+        return $"{name} ({address})";
     }
 
     private static string ResolveFacts(string? facts)
@@ -254,188 +461,5 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         }
 
         return string.IsNullOrWhiteSpace(text) ? "English" : text;
-    }
-
-    public async Task<string> AskAddressDetailsAsync(
-        string buildingName,
-        string? buildingAddress,
-        string? currentStory,
-        string question,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(buildingName) && string.IsNullOrWhiteSpace(buildingAddress))
-        {
-            throw new ArgumentException("A building name or address is required.", nameof(buildingName));
-        }
-
-        if (string.IsNullOrWhiteSpace(question))
-        {
-            throw new ArgumentException("A question is required.", nameof(question));
-        }
-
-        var prompt = BuildFollowUpPrompt(buildingName, buildingAddress, currentStory, question);
-        return await SendChatCompletionAsync(prompt, 0.7, 400, "follow-up answer", cancellationToken);
-    }
-
-    private string BuildFollowUpPrompt(
-        string buildingName,
-        string? buildingAddress,
-        string? currentStory,
-        string question)
-    {
-        var promptBuilder = new StringBuilder();
-        var trimmedQuestion = question.Trim();
-
-        if (!string.IsNullOrWhiteSpace(buildingAddress))
-        {
-            promptBuilder.AppendLine($"A visitor is curious about the building at the exact street address \"{buildingAddress}\".");
-            promptBuilder.AppendLine("Use reliable historical knowledge tied to that location whenever possible.");
-        }
-        else
-        {
-            promptBuilder.AppendLine($"A visitor is curious about the building known as \"{buildingName}\".");
-        }
-
-        var trimmedStory = string.IsNullOrWhiteSpace(currentStory) ? null : currentStory.Trim();
-        if (!string.IsNullOrWhiteSpace(trimmedStory))
-        {
-            promptBuilder.AppendLine();
-            promptBuilder.AppendLine("Here is the story that was previously shared about this place:");
-            promptBuilder.AppendLine(trimmedStory);
-        }
-
-        promptBuilder.AppendLine();
-        promptBuilder.AppendLine("Answer the visitor's follow-up question with historically grounded, welcoming detail.");
-        promptBuilder.AppendLine("If you are unsure about any detail, acknowledge the uncertainty instead of inventing facts.");
-        promptBuilder.AppendLine("Keep the response concise—no more than two short paragraphs.");
-        promptBuilder.Append("Question: ").Append(trimmedQuestion);
-
-        return promptBuilder.ToString().Trim();
-    }
-
-    private async Task<string> SendChatCompletionAsync(
-        string prompt,
-        double temperature,
-        int maxTokens,
-        string failureContext,
-        CancellationToken cancellationToken)
-    {
-        var key = GetOrThrowApiKey();
-
-        var payload = new
-        {
-            model = _model,
-            messages = new object[]
-            {
-                new { role = "system", content = SystemMessage },
-                new { role = "user", content = prompt }
-            },
-            temperature,
-            max_tokens = maxTokens
-        };
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync();
-
-        if (!response.IsSuccessStatusCode)
-        {
-            var errorMessage = TryExtractErrorMessage(responseBody);
-            var friendlyMessage = string.IsNullOrWhiteSpace(errorMessage)
-                ? $"OpenAI API error ({(int)response.StatusCode})."
-                : $"OpenAI API error ({(int)response.StatusCode}): {errorMessage}";
-
-            _logger.LogError("OpenAI API returned {Status}: {Body}", response.StatusCode, responseBody);
-            throw new InvalidOperationException(friendlyMessage);
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(responseBody);
-            var content = doc.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
-
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                throw new InvalidOperationException($"OpenAI response did not contain {failureContext} content.");
-            }
-
-            return content.Trim();
-        }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
-        {
-            _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
-            throw new InvalidOperationException($"Failed to parse the {failureContext} response from OpenAI.", ex);
-        }
-    }
-
-    private string GetOrThrowApiKey()
-    {
-        var key = ResolveApiKey();
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            throw new InvalidOperationException("No OpenAI API key configured. Set the OPENAI_API_KEY environment variable or save it in Preferences under 'ai.story.apikey'.");
-        }
-
-        return key;
-    }
-
-    private string ResolveApiKey()
-    {
-        if (!string.IsNullOrWhiteSpace(_apiKey))
-        {
-            return _apiKey;
-        }
-
-        var key = _apiKeyProvider.OpenAiApiKey;
-        if (!string.IsNullOrWhiteSpace(key))
-        {
-            _apiKey = key;
-            return key;
-        }
-
-        key = Preferences.Get("ai.story.apikey", string.Empty);
-        if (!string.IsNullOrWhiteSpace(key))
-        {
-            _apiKey = key;
-            return key;
-        }
-
-        key = Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? string.Empty;
-        _apiKey = key;
-        return key;
-    }
-
-    private static string? TryExtractErrorMessage(string responseBody)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(responseBody);
-            if (doc.RootElement.TryGetProperty("error", out var error))
-            {
-                if (error.ValueKind == JsonValueKind.Object && error.TryGetProperty("message", out var message))
-                {
-                    return message.GetString();
-                }
-
-                var text = error.GetString();
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    return text;
-                }
-            }
-        }
-        catch (JsonException)
-        {
-            // Ignore parse failures and fall back to the raw message.
-        }
-
-        return null;
     }
 }
