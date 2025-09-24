@@ -9,6 +9,7 @@ using Microsoft.Maui.Controls;
 using Microsoft.Maui.Media;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 
 namespace CityTour;
 
@@ -19,11 +20,11 @@ public partial class StoryCanvasPage : ContentPage
     private readonly string? _displayAddress;
     private readonly string? _storyAddress;
     private readonly IAiStoryService _storyService;
-    private readonly IApiKeyProvider _apiKeys;
     private readonly double? _latitude;
     private readonly double? _longitude;
-    private readonly string? _buildingFacts;
+    private string? _buildingFacts;
     private readonly string _preferredLanguage;
+    private readonly IWikipediaService _wikipediaService;
     private CancellationTokenSource? _generationCts;
     private bool _hasTriggeredInitialGeneration;
     private bool _isInitializingCategory;
@@ -56,6 +57,8 @@ public partial class StoryCanvasPage : ContentPage
     private const string ChatReadyStatusMessage = "Ask the guide for more details about this address.";
     private const string ChatBusyStatusMessage = "Asking the tour guide…";
     private const string ChatFollowUpStatusMessage = "Ask another follow-up question whenever you're curious.";
+    private CancellationTokenSource? _wikipediaCts;
+    private bool _isWikipediaBusy;
 
     public StoryCanvasPage(
         string placeId,
@@ -64,17 +67,19 @@ public partial class StoryCanvasPage : ContentPage
         string? storyAddress,
         string? buildingFacts,
         IAiStoryService storyService,
-        IApiKeyProvider apiKeyProvider,
+        IWikipediaService wikipediaService,
         double? latitude = null,
         double? longitude = null)
     {
         InitializeComponent();
+        ArgumentNullException.ThrowIfNull(storyService);
+        ArgumentNullException.ThrowIfNull(wikipediaService);
         _placeId = placeId;
         _buildingName = buildingName;
         _displayAddress = string.IsNullOrWhiteSpace(displayAddress) ? null : displayAddress;
         _storyAddress = string.IsNullOrWhiteSpace(storyAddress) ? null : storyAddress;
         _storyService = storyService;
-        _apiKeys = apiKeyProvider;
+        _wikipediaService = wikipediaService;
         _latitude = latitude;
         _longitude = longitude;
         _buildingFacts = string.IsNullOrWhiteSpace(buildingFacts) ? null : buildingFacts.Trim();
@@ -104,6 +109,7 @@ public partial class StoryCanvasPage : ContentPage
         StoryEditor.TextChanged += OnStoryTextChanged;
         UpdateAudioControls();
         UpdateChatControls();
+        UpdateWikipediaControls();
     }
 
     protected override void OnAppearing()
@@ -125,6 +131,9 @@ public partial class StoryCanvasPage : ContentPage
         _generationCts?.Cancel();
         CancelSpeech();
         _chatCts?.Cancel();
+        _wikipediaCts?.Cancel();
+        _wikipediaCts?.Dispose();
+        _wikipediaCts = null;
     }
 
     private async Task GenerateStoryAsync(bool userInitiated = false)
@@ -214,6 +223,9 @@ public partial class StoryCanvasPage : ContentPage
         _generationCts?.Cancel();
         CancelSpeech();
         _chatCts?.Cancel();
+        _wikipediaCts?.Cancel();
+        _wikipediaCts?.Dispose();
+        _wikipediaCts = null;
         await Navigation.PopModalAsync();
     }
 
@@ -436,6 +448,181 @@ public partial class StoryCanvasPage : ContentPage
             _preferredLanguage);
         PromptLabel.Text = prompt;
         PromptInfoButton.IsEnabled = !string.IsNullOrWhiteSpace(prompt);
+    }
+
+    private void UpdateWikipediaControls()
+    {
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            WikipediaButton.IsEnabled = !_isWikipediaBusy;
+        });
+    }
+
+    private async void OnFetchWikipediaClicked(object? sender, EventArgs e)
+    {
+        if (_isWikipediaBusy)
+        {
+            return;
+        }
+
+        var addressHint = GetAddressForStory() ?? _displayAddress ?? _storyAddress;
+        var buildingQueryName = string.IsNullOrWhiteSpace(_buildingName) ? addressHint : _buildingName;
+
+        if (string.IsNullOrWhiteSpace(buildingQueryName) && string.IsNullOrWhiteSpace(addressHint))
+        {
+            await DisplayAlert("Wikipedia integration", "A building name or address is required before contacting Wikipedia.", "OK");
+            return;
+        }
+
+        _isWikipediaBusy = true;
+        UpdateWikipediaControls();
+
+        var cts = new CancellationTokenSource();
+        _wikipediaCts?.Cancel();
+        _wikipediaCts?.Dispose();
+        _wikipediaCts = cts;
+
+        try
+        {
+            await SetStatusAsync("Contacting Wikipedia for this place…");
+
+            var summary = await _wikipediaService.FetchSummaryAsync(
+                buildingQueryName ?? string.Empty,
+                addressHint,
+                _latitude,
+                _longitude,
+                cts.Token);
+
+            cts.Token.ThrowIfCancellationRequested();
+
+            if (summary is null)
+            {
+                const string message = "Wikipedia did not return any information for this place.";
+                await AppendWikipediaMessageAsync(message);
+                await SetStatusAsync(message);
+                await DisplayAlert("Wikipedia integration", message, "OK");
+                return;
+            }
+
+            await AppendWikipediaSummaryAsync(summary);
+            await SetStatusAsync("Wikipedia summary added. Regenerate the story to include these details.");
+        }
+        catch (OperationCanceledException)
+        {
+            await SetStatusAsync("Wikipedia integration was canceled.");
+        }
+        catch (Exception ex)
+        {
+            var message = $"Wikipedia integration failed. {ex.Message}";
+            await AppendWikipediaMessageAsync(message);
+            await SetStatusAsync(message);
+            await MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                await DisplayAlert("Wikipedia integration failed", ex.Message, "OK");
+            });
+        }
+        finally
+        {
+            if (ReferenceEquals(_wikipediaCts, cts))
+            {
+                _wikipediaCts = null;
+            }
+            cts.Dispose();
+            _isWikipediaBusy = false;
+            UpdateWikipediaControls();
+        }
+    }
+
+    private Task AppendWikipediaSummaryAsync(WikipediaSummary summary)
+    {
+        return MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            var builder = new StringBuilder();
+            var existing = StoryEditor.Text;
+            if (!string.IsNullOrWhiteSpace(existing))
+            {
+                builder.Append(existing.TrimEnd());
+                builder.AppendLine();
+                builder.AppendLine();
+            }
+
+            builder.AppendLine($"Wikipedia summary — {summary.Title}");
+
+            var summaryText = !string.IsNullOrWhiteSpace(summary.Extract)
+                ? summary.Extract.Trim()
+                : summary.Description?.Trim();
+
+            if (!string.IsNullOrWhiteSpace(summaryText))
+            {
+                builder.AppendLine(summaryText);
+            }
+            else
+            {
+                builder.AppendLine("No summary was available for this article.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(summary.Url))
+            {
+                builder.AppendLine();
+                builder.AppendLine(summary.Url);
+            }
+
+            StoryEditor.Text = builder.ToString();
+
+            var wikipediaFacts = BuildWikipediaFactBlock(summary);
+            if (!string.IsNullOrWhiteSpace(wikipediaFacts))
+            {
+                _buildingFacts = string.IsNullOrWhiteSpace(_buildingFacts)
+                    ? wikipediaFacts
+                    : $"{_buildingFacts.Trim()}{Environment.NewLine}{Environment.NewLine}{wikipediaFacts}";
+                UpdatePromptPreview();
+            }
+        });
+    }
+
+    private Task AppendWikipediaMessageAsync(string message)
+    {
+        return MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            var builder = new StringBuilder();
+            var existing = StoryEditor.Text;
+            if (!string.IsNullOrWhiteSpace(existing))
+            {
+                builder.Append(existing.TrimEnd());
+                builder.AppendLine();
+                builder.AppendLine();
+            }
+
+            builder.AppendLine(message);
+            StoryEditor.Text = builder.ToString();
+        });
+    }
+
+    private static string? BuildWikipediaFactBlock(WikipediaSummary summary)
+    {
+        var builder = new StringBuilder();
+
+        if (!string.IsNullOrWhiteSpace(summary.Title))
+        {
+            builder.AppendLine($"Wikipedia article: {summary.Title}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(summary.Extract))
+        {
+            builder.AppendLine(summary.Extract.Trim());
+        }
+        else if (!string.IsNullOrWhiteSpace(summary.Description))
+        {
+            builder.AppendLine(summary.Description.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(summary.Url))
+        {
+            builder.AppendLine($"Source: {summary.Url}");
+        }
+
+        var text = builder.ToString().Trim();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
     private async void OnPromptInfoClicked(object? sender, EventArgs e)
