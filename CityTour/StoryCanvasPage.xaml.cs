@@ -157,6 +157,7 @@ public partial class StoryCanvasPage : ContentPage
             {
                 StoryEditor.Text = storyResult.Story;
                 PromptLabel.Text = storyResult.Prompt;
+                PromptInfoButton.IsEnabled = !string.IsNullOrWhiteSpace(storyResult.Prompt);
             });
 
             await SetStatusAsync($"Story generated with {modelLabel} ({categoryLabel} focus). Feel free to tweak or add your own notes.");
@@ -434,6 +435,19 @@ public partial class StoryCanvasPage : ContentPage
             _buildingFacts,
             _preferredLanguage);
         PromptLabel.Text = prompt;
+        PromptInfoButton.IsEnabled = !string.IsNullOrWhiteSpace(prompt);
+    }
+
+    private async void OnPromptInfoClicked(object? sender, EventArgs e)
+    {
+        var prompt = PromptLabel.Text;
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            await DisplayAlert("Story prompt", "The story prompt will be available after the first story is generated.", "OK");
+            return;
+        }
+
+        await DisplayAlert("Story prompt", prompt, "Close");
     }
 
     private void OnSendChatClicked(object? sender, EventArgs e)
