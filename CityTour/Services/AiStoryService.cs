@@ -345,8 +345,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
                 }
             },
             temperature,
-            max_output_tokens = maxOutputTokens,
-            response_format = new { type = "text" }
+            max_output_tokens = maxOutputTokens
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses");
