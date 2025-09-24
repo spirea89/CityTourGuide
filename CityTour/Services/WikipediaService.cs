@@ -175,7 +175,7 @@ public class WikipediaService : IWikipediaService
         {
             var primaryUrl = $"https://api.wikimedia.org/core/v1/wikipedia/{normalizedLang}/page/summary/{encodedTitle}";
             var primaryResult = await RequestSummaryAsync(primaryUrl, normalizedLang, title, includeApiKey: true, cancellationToken);
-            if (primaryResult.Success)
+            if (primaryResult.IsSuccess)
             {
                 return primaryResult.Summary;
             }
@@ -188,7 +188,7 @@ public class WikipediaService : IWikipediaService
 
         var fallbackUrl = $"https://{normalizedLang}.wikipedia.org/api/rest_v1/page/summary/{encodedTitle}";
         var fallbackResult = await RequestSummaryAsync(fallbackUrl, normalizedLang, title, includeApiKey: false, cancellationToken);
-        if (fallbackResult.Success)
+        if (fallbackResult.IsSuccess)
         {
             return fallbackResult.Summary;
         }
@@ -571,12 +571,15 @@ public class WikipediaService : IWikipediaService
         return builder.ToString();
     }
 
-    private readonly record struct RequestResult(WikipediaSummary? Summary, bool Success, bool Fatal, string? ErrorMessage)
+    private readonly record struct RequestResult(WikipediaSummary? Summary, bool IsSuccess, bool Fatal, string? ErrorMessage)
     {
-        public static RequestResult Success(WikipediaSummary summary) => new(summary, true, false, null);
+        public static RequestResult Success(WikipediaSummary summary) =>
+            new(summary, IsSuccess: true, Fatal: false, ErrorMessage: null);
 
-        public static RequestResult NotFound() => new(null, false, false, null);
+        public static RequestResult NotFound() =>
+            new(null, IsSuccess: false, Fatal: false, ErrorMessage: null);
 
-        public static RequestResult Failure(string? message, bool fatal) => new(null, false, fatal, message);
+        public static RequestResult Failure(string? message, bool fatal) =>
+            new(null, IsSuccess: false, Fatal: fatal, ErrorMessage: message);
     }
 }
