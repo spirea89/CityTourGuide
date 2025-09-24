@@ -17,6 +17,7 @@ export type BuildingFact =
   | { key: "osm_id"; value: string; evidence: Evidence[]; confidence: number }
   | { key: "wikidata_qid"; value: string; evidence: Evidence[]; confidence: number }
   | { key: "wikipedia_title"; value: string; evidence: Evidence[]; confidence: number }
+  | { key: "wikipedia_summary"; value: string; evidence: Evidence[]; confidence: number }
   | { key: "construction_start"; value: string; evidence: Evidence[]; confidence: number }
   | { key: "construction_end"; value: string; evidence: Evidence[]; confidence: number }
   | { key: "architect"; value: string; evidence: Evidence[]; confidence: number }
