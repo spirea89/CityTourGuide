@@ -1,6 +1,3 @@
 {
-  "googleMapsApiKey": "please insert your key here",
-  "googlePlacesApiKey": "please insert your key here",
-  "openAiApiKey": "please insert your key here",
   "wikipediaApiKey": "please insert your key here"
 }
