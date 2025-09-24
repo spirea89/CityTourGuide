@@ -14,7 +14,7 @@
 
         <!-- Search bar -->
         <SearchBar x:Name="Search"
-                   Placeholder="Search places or addresses"
+                   Placeholder="Search addresses"
                    SearchButtonPressed="OnSearchButtonPressed"
                    TextChanged="OnSearchTextChanged" />
 
