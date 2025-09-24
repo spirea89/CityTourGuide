@@ -548,7 +548,12 @@ public partial class StoryCanvasPage : ContentPage
         var apiKey = _apiKeys.GoogleMapsApiKey;
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            ShowStreetViewMessage("Add a Google Maps API key to view Street View for this address.");
+            apiKey = _apiKeys.GooglePlacesApiKey;
+        }
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            ShowStreetViewMessage("Add a Google Maps or Places API key to view Street View for this address.");
             return;
         }
 
