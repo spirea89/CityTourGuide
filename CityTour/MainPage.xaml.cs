@@ -20,6 +20,7 @@ public partial class MainPage : ContentPage
     private readonly PlaceService _service;
     private readonly IAiStoryService _storyService;
     private readonly IApiKeyProvider _apiKeys;
+    private readonly IWikipediaService _wikipediaService;
     private List<Place> _allPlaces = new();
 
     // Google Places (Web)
@@ -34,12 +35,13 @@ public partial class MainPage : ContentPage
     private Location? _streetViewLocation;
     private const string SavedBuildingsKey = "citytour.saved_buildings";
 
-    public MainPage(PlaceService service, IAiStoryService storyService, IApiKeyProvider apiKeyProvider)
+    public MainPage(PlaceService service, IAiStoryService storyService, IApiKeyProvider apiKeyProvider, IWikipediaService wikipediaService)
     {
         InitializeComponent();
         _service = service;
         _storyService = storyService;
         _apiKeys = apiKeyProvider;
+        _wikipediaService = wikipediaService;
     }
 
     protected override void OnAppearing()
@@ -518,7 +520,7 @@ iframe {{ border: 0; width: 100%; height: 100%; border-radius: 12px; }}
             storyAddress,
             buildingFacts,
             _storyService,
-            _apiKeys,
+            _wikipediaService,
             lat,
             lng));
     }
