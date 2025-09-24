@@ -93,11 +93,53 @@ public partial class MainPage : ContentPage
             return;
         }
 
+        var filter = text.Trim();
+        if (filter.Length == 0)
+        {
+            RefreshPins(_allPlaces);
+            return;
+        }
+
         var filtered = _allPlaces
-            .Where(p => p.Name.Contains(text, StringComparison.OrdinalIgnoreCase))
+            .Where(p => AddressMatches(p, filter))
             .ToList();
 
         RefreshPins(filtered);
+    }
+
+    private static bool AddressMatches(Place place, string filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+        {
+            return true;
+        }
+
+        var rawAddress = place.Address ?? string.Empty;
+        if (rawAddress.Contains(filter, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var parsed = AddressFormatter.Parse(rawAddress);
+
+        return MatchesAddressSegment(parsed.StreetAndNumber, filter)
+            || MatchesAddressSegment(parsed.City, filter)
+            || MatchesAddressSegment(parsed.Country, filter)
+            || MatchesAddressSegment(parsed.DisplayAddress, filter)
+            || MatchesAddressSegment(parsed.StoryAddress, filter)
+            || MatchesAddressSegment(parsed.Original, filter);
+    }
+
+    private static bool MatchesAddressSegment(string? segment, string filter)
+    {
+        if (string.IsNullOrWhiteSpace(segment))
+        {
+            return false;
+        }
+
+        var compareInfo = CultureInfo.CurrentCulture.CompareInfo;
+        const CompareOptions options = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace | CompareOptions.IgnoreSymbols;
+        return compareInfo.IndexOf(segment, filter, options) >= 0;
     }
 
     // SearchBar events
