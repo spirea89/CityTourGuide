@@ -44,7 +44,7 @@ test("uncertain when sources are thin", async () => {
     }
   }
 
-  __testOnly.setProviders({ geocoder: undefined, overpass: undefined, wikidata: undefined });
+  __testOnly.setProviders({ geocoder: undefined, overpass: undefined, wikidata: undefined, wikipedia: undefined });
 });
 
 test("corroborates across Overpass + Wikidata", async () => {
@@ -88,6 +88,11 @@ test("corroborates across Overpass + Wikidata", async () => {
         };
       },
     },
+    wikipedia: {
+      async fetchSummary() {
+        return null;
+      },
+    },
   });
 
   const result: BuildingFactsResult = await getBuildingFacts({ lat: 48.201, lon: 16.382, nowIso: "2024-03-01" });
@@ -121,5 +126,67 @@ test("corroborates across Overpass + Wikidata", async () => {
 
   assert.ok(result.summary && result.summary.split(/\s+/).filter(Boolean).length <= 120, "summary exceeds 120 words");
 
-  __testOnly.setProviders({ geocoder: undefined, overpass: undefined, wikidata: undefined });
+  __testOnly.setProviders({ geocoder: undefined, overpass: undefined, wikidata: undefined, wikipedia: undefined });
+});
+
+test("adds wikipedia summary fact when article available", async () => {
+  __testOnly.setProviders({
+    geocoder: {
+      async geocodeAddress() {
+        return null;
+      },
+    },
+    overpass: {
+      async findNearestBuilding() {
+        return {
+          id: "3",
+          type: "way",
+          lat: 48.21,
+          lon: 16.37,
+          tags: {
+            wikipedia: "de:Haus Beispiel",
+          },
+        };
+      },
+    },
+    wikidata: {
+      async resolveFromWikipedia() {
+        return null;
+      },
+      async fetchFactsByQid() {
+        return null;
+      },
+    },
+    wikipedia: {
+      async fetchSummary(title: string, lang: string) {
+        assert.equal(title, "Haus Beispiel");
+        assert.equal(lang, "de");
+        return {
+          title: "Haus Beispiel",
+          normalizedTitle: "Haus_Beispiel",
+          lang: "de",
+          url: "https://de.wikipedia.org/wiki/Haus_Beispiel",
+          extract: "Haus Beispiel is a fictional building in Vienna.",
+          description: "Fictional building",
+          lastModified: "2024-02-20T10:00:00Z",
+        };
+      },
+    },
+  });
+
+  const result: BuildingFactsResult = await getBuildingFacts({ lat: 48.21, lon: 16.37, nowIso: "2024-03-01" });
+
+  const summaryFact = result.facts.find((fact) => fact.key === "wikipedia_summary");
+  assert.ok(summaryFact, "missing wikipedia_summary fact");
+  assert.equal(summaryFact?.value, "Haus Beispiel is a fictional building in Vienna.");
+  assert.ok(
+    summaryFact?.evidence.some((e) => /wikipedia\.org/.test(e.url)),
+    "summary evidence should reference Wikipedia"
+  );
+  assert.ok(
+    result.canonical.wikipedia_title && result.canonical.wikipedia_title.startsWith("de:"),
+    "expected canonical wikipedia title"
+  );
+
+  __testOnly.setProviders({ geocoder: undefined, overpass: undefined, wikidata: undefined, wikipedia: undefined });
 });
