@@ -41,12 +41,64 @@ public class AiStoryService : IAiStoryService
 {
     private const string DefaultModel = "gpt-4o-mini";
     private const string ModelPreferenceKey = "ai.story.model";
-    private const string SystemMessage = "You are a creative, historically knowledgeable city tour guide. Craft short stories and responses about buildings that feel authentic, welcoming, and vivid.";
-    private const string HistoryPromptTemplate = "You are a meticulous local historian. Using only facts about {address}, write a vivid, chronological ~120–150 word history highlighting founding date, name changes, 2–3 pivotal events, and significance.";
-    private const string PersonalitiesPromptTemplate = "You are a culturally savvy guide. From facts on people linked to {address}, craft a ~110–140 word mini-story weaving 2–3 notable figures with full names, dates, roles, and one concrete anecdote each; avoid speculation.";
-    private const string ArchitecturePromptTemplate = "You are an architect explaining to curious visitors. Based strictly on facts, describe {address}’s style, architect, era, materials, façade/interior highlights, notable alterations, and 2 street-level details to spot in clear (~120–150 words).";
-    private const string TodayPromptTemplate = "You are a practical local host. In ~90–120 words, summarize {address}’s current purpose/occupants, public access (hours, tickets, accessibility), photo/etiquette notes, and one nearby tip; if any item isn’t in facts.” ";
-    private const string KidsPromptTemplate = "You are a playful storyteller for ages 6–10. In ~90–110 words, tell a cheerful, simple story about {address} using easy sentences, fun comparisons or sounds, one cool fact from facts, no scary content, and end with a question inviting kids to spot a detail when they visit.";
+    private const string SystemMessage = """
+You are a creative yet trustworthy city tour guide. Base every response strictly on the verified facts supplied by the user. If the prompt says information is missing, acknowledge the gap instead of inventing details. Keep the tone welcoming and vivid while staying factual.
+""";
+    private const string HistoryPromptTemplate = """
+You are a meticulous local historian introducing visitors to {building_name} at {address}. Write the story in {language}.
+
+Work only with the verified facts listed below. If a detail is absent, say so rather than guessing.
+
+FACTS:
+{facts}
+
+TASK:
+Write a chronological 120–150 word history that highlights the founding date, any name changes, two to three pivotal events, and why the place matters today. Keep the tone warm but precise.
+""";
+    private const string PersonalitiesPromptTemplate = """
+You are a culturally savvy guide explaining the people connected to {building_name} at {address}. Respond in {language}.
+
+Use only the verified facts below. If information about a figure is missing, be transparent about the uncertainty.
+
+FACTS:
+{facts}
+
+TASK:
+Craft a 110–140 word mini-story that weaves in two to three notable figures with full names, relevant dates, their roles, and one concrete anecdote each.
+""";
+    private const string ArchitecturePromptTemplate = """
+You are an architect talking to curious visitors about {building_name} at {address}. Answer in {language}.
+
+Ground every observation in the verified facts provided. Do not speculate about elements that are not documented.
+
+FACTS:
+{facts}
+
+TASK:
+Describe the site's architectural style, architect, era, materials, notable façade or interior details, significant alterations, and two street-level features to notice in roughly 120–150 words.
+""";
+    private const string TodayPromptTemplate = """
+You are a practical local host briefing visitors about {building_name} at {address}. Respond in {language}.
+
+Rely only on the verified facts below. If a requested detail is missing, clearly note that it is not documented.
+
+FACTS:
+{facts}
+
+TASK:
+Summarize in 90–120 words the current purpose or occupants, public access details (such as hours, ticketing, accessibility), photo or etiquette guidance, and one nearby tip.
+""";
+    private const string KidsPromptTemplate = """
+You are a playful storyteller for children aged 6–10 visiting {building_name} at {address}. Tell the tale in {language}.
+
+Stick to the verified facts. Highlight what is known and gently mention when a detail is unknown.
+
+FACTS:
+{facts}
+
+TASK:
+Tell a cheerful 90–110 word story using simple sentences, fun comparisons or sounds, one exciting fact from the list, no frightening content, and end with a question that invites kids to spot something when they arrive.
+""";
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiStoryService> _logger;
@@ -137,7 +189,34 @@ public class AiStoryService : IAiStoryService
 
     private static string ResolveFacts(string? facts)
     {
-        return string.IsNullOrWhiteSpace(facts) ? "unknown" : facts.Trim();
+        if (string.IsNullOrWhiteSpace(facts))
+        {
+            return "No verified facts were provided. Explain to the visitor that trustworthy details for this site could not be confirmed.";
+        }
+
+        var lines = facts
+            .Split(new[] { '\\r', '\\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+        var builder = new StringBuilder();
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            if (!line.StartsWith("-"))
+            {
+                builder.Append("- ");
+            }
+
+            builder.Append(line);
+            builder.AppendLine();
+        }
+
+        var formatted = builder.ToString().TrimEnd();
+        return formatted.Length > 0 ? formatted : facts.Trim();
     }
 
     private static string ResolveBuildingName(string buildingName, string? buildingAddress)
