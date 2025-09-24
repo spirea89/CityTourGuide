@@ -1,6 +1,6 @@
 {
-  "googleMapsApiKey": "AIzaSyBmlEatUTKXgQ9NCgYyHWGn0o7p4JPBw0I",
-  "googlePlacesApiKey": "AIzaSyBmlEatUTKXgQ9NCgYyHWGn0o7p4JPBw0I",
-  "openAiApiKey": "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",
-  "wikipediaApiKey": "your-wikimedia-rest-api-key"
+  "googleMapsApiKey": "please insert your key here",
+  "googlePlacesApiKey": "please insert your key here",
+  "openAiApiKey": "please insert your key here",
+  "wikipediaApiKey": "please insert your key here"
 }
