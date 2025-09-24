@@ -39,7 +39,7 @@ public interface IAiStoryService
 
 public class AiStoryService : IAiStoryService
 {
-    private const string DefaultModel = "gpt-4o-mini";
+    private const string DefaultModel = "gpt-5";
     private const string ModelPreferenceKey = "ai.story.model";
     private const string SystemMessage = """
 You are a creative yet trustworthy city tour guide. Base every response strictly on the verified facts supplied by the user. If the prompt says information is missing, acknowledge the gap instead of inventing details. Keep the tone welcoming and vivid while staying factual.
@@ -149,7 +149,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         }
 
         var prompt = BuildStoryPrompt(buildingName, buildingAddress, category, facts, language);
-        var story = await SendChatCompletionAsync(prompt, 0.8, 600, "story", cancellationToken);
+        var story = await SendResponseAsync(prompt, 0.8, 600, "story", cancellationToken);
 
         return new StoryGenerationResult(story, prompt);
     }
@@ -274,7 +274,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         }
 
         var prompt = BuildFollowUpPrompt(buildingName, buildingAddress, currentStory, question);
-        return await SendChatCompletionAsync(prompt, 0.7, 400, "follow-up answer", cancellationToken);
+        return await SendResponseAsync(prompt, 0.7, 400, "follow-up answer", cancellationToken);
     }
 
     private string BuildFollowUpPrompt(
@@ -313,10 +313,10 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         return promptBuilder.ToString().Trim();
     }
 
-    private async Task<string> SendChatCompletionAsync(
+    private async Task<string> SendResponseAsync(
         string prompt,
         double temperature,
-        int maxTokens,
+        int maxOutputTokens,
         string failureContext,
         CancellationToken cancellationToken)
     {
@@ -325,16 +325,31 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         var payload = new
         {
             model = _model,
-            messages = new object[]
+            input = new object[]
             {
-                new { role = "system", content = SystemMessage },
-                new { role = "user", content = prompt }
+                new
+                {
+                    role = "system",
+                    content = new object[]
+                    {
+                        new { type = "text", text = SystemMessage }
+                    }
+                },
+                new
+                {
+                    role = "user",
+                    content = new object[]
+                    {
+                        new { type = "text", text = prompt }
+                    }
+                }
             },
             temperature,
-            max_tokens = maxTokens
+            max_output_tokens = maxOutputTokens,
+            response_format = new { type = "text" }
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
         request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
@@ -355,11 +370,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         try
         {
             using var doc = JsonDocument.Parse(responseBody);
-            var content = doc.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
+            var content = TryExtractPrimaryText(doc.RootElement);
 
             if (string.IsNullOrWhiteSpace(content))
             {
@@ -410,6 +421,151 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         key = Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? string.Empty;
         _apiKey = key;
         return key;
+    }
+
+    private static string? TryExtractPrimaryText(JsonElement root)
+    {
+        var text = TryExtractFromResponsesApi(root);
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            return text;
+        }
+
+        if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
+        {
+            var choice = choices[0];
+            if (choice.ValueKind == JsonValueKind.Object)
+            {
+                if (choice.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object && message.TryGetProperty("content", out var messageContent) && messageContent.ValueKind == JsonValueKind.String)
+                {
+                    var legacyContent = messageContent.GetString();
+                    if (!string.IsNullOrWhiteSpace(legacyContent))
+                    {
+                        return legacyContent;
+                    }
+                }
+
+                if (choice.TryGetProperty("text", out var legacyText) && legacyText.ValueKind == JsonValueKind.String)
+                {
+                    var textValue = legacyText.GetString();
+                    if (!string.IsNullOrWhiteSpace(textValue))
+                    {
+                        return textValue;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryExtractFromResponsesApi(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (root.TryGetProperty("output", out var output) && output.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in output.EnumerateArray())
+            {
+                var text = ExtractTextFromElement(item);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+        }
+
+        if (root.TryGetProperty("content", out var contentElement))
+        {
+            var text = ExtractTextFromElement(contentElement);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        if (root.TryGetProperty("output_text", out var outputTextElement))
+        {
+            var text = ExtractTextFromElement(outputTextElement);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractTextFromElement(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                return element.GetString();
+            case JsonValueKind.Object:
+            {
+                if (element.TryGetProperty("text", out var textProperty))
+                {
+                    var text = ExtractTextFromElement(textProperty);
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text;
+                    }
+                }
+
+                if (element.TryGetProperty("content", out var nestedContent))
+                {
+                    var text = ExtractTextFromElement(nestedContent);
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text;
+                    }
+                }
+
+                if (element.TryGetProperty("output", out var nestedOutput))
+                {
+                    var text = ExtractTextFromElement(nestedOutput);
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text;
+                    }
+                }
+
+                if (element.TryGetProperty("output_text", out var nestedOutputText))
+                {
+                    var text = ExtractTextFromElement(nestedOutputText);
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text;
+                    }
+                }
+
+                return null;
+            }
+            case JsonValueKind.Array:
+            {
+                var builder = new StringBuilder();
+                foreach (var item in element.EnumerateArray())
+                {
+                    var text = ExtractTextFromElement(item);
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        if (builder.Length > 0)
+                        {
+                            builder.AppendLine();
+                        }
+                        builder.Append(text.Trim());
+                    }
+                }
+
+                return builder.Length > 0 ? builder.ToString() : null;
+            }
+            default:
+                return null;
+        }
     }
 
     private static string? TryExtractErrorMessage(string responseBody)
