@@ -195,7 +195,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         }
 
         var lines = facts
-            .Split(new[] { '\\r', '\\n' }, StringSplitOptions.RemoveEmptyEntries);
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
         var builder = new StringBuilder();
         foreach (var rawLine in lines)
