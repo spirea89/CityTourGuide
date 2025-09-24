@@ -190,3 +190,49 @@ test("adds wikipedia summary fact when article available", async () => {
 
   __testOnly.setProviders({ geocoder: undefined, overpass: undefined, wikidata: undefined, wikipedia: undefined });
 });
+
+test("passes address context when looking up wikipedia summary", async () => {
+  const calls: Array<{ title: string; lang: string; opts: any }> = [];
+  __testOnly.setProviders({
+    geocoder: {
+      async geocodeAddress() {
+        return null;
+      },
+    },
+    overpass: {
+      async findNearestBuilding() {
+        return null;
+      },
+    },
+    wikidata: {
+      async resolveFromWikipedia() {
+        return null;
+      },
+      async fetchFactsByQid() {
+        return null;
+      },
+    },
+    wikipedia: {
+      async fetchSummary(title: string, lang: string, opts?: { address?: string }) {
+        calls.push({ title, lang, opts });
+        return null;
+      },
+    },
+  });
+
+  const address = "Ungargasse 5, 1030 Wien, Austria";
+  await getBuildingFacts({
+    lat: 48.20849,
+    lon: 16.38208,
+    address,
+    locale: "en-US",
+    nowIso: "2024-03-01",
+  });
+
+  assert.ok(calls.length >= 1, "expected fetchSummary to be invoked");
+  assert.equal(calls[0]?.title, address);
+  assert.equal(calls[0]?.lang, "en");
+  assert.equal(calls[0]?.opts?.address, address);
+
+  __testOnly.setProviders({ geocoder: undefined, overpass: undefined, wikidata: undefined, wikipedia: undefined });
+});
