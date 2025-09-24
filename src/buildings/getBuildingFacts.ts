@@ -491,6 +491,11 @@ export async function getBuildingFacts(input: GetBuildingFactsInput): Promise<Bu
     }
   }
 
+  const summaryAddress =
+    (typeof resolvedAddress === "string" && resolvedAddress.trim()) ||
+    (typeof input.address === "string" && input.address.trim()) ||
+    undefined;
+
   let wikipediaSummary: WikipediaSummary | null = null;
   let attemptedWikipediaSummary = false;
   if (wikipediaProvider && typeof wikipediaProvider.fetchSummary === "function") {
@@ -501,7 +506,11 @@ export async function getBuildingFacts(input: GetBuildingFactsInput): Promise<Bu
     if (osmWikipedia) {
       attempts.push({ title: osmWikipedia.title, lang: osmWikipedia.lang });
     }
+    if (summaryAddress) {
+      attempts.push({ title: summaryAddress, lang });
+    }
     const seen = new Set<string>();
+    const summaryOptions = summaryAddress ? { address: summaryAddress } : undefined;
     for (const attempt of attempts) {
       const attemptKey = `${attempt.lang}:${attempt.title}`.toLowerCase();
       if (seen.has(attemptKey)) {
@@ -510,7 +519,11 @@ export async function getBuildingFacts(input: GetBuildingFactsInput): Promise<Bu
       seen.add(attemptKey);
       attemptedWikipediaSummary = true;
       try {
-        const summary = await wikipediaProvider.fetchSummary(attempt.title, attempt.lang);
+        const summary = await wikipediaProvider.fetchSummary(
+          attempt.title,
+          attempt.lang,
+          summaryOptions
+        );
         if (summary) {
           wikipediaSummary = summary;
           break;
