@@ -404,10 +404,32 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
                 return content.Trim();
             }
 
-            var incompleteMessage = TrySummarizeIncompleteResponse(doc.RootElement, failureContext);
+            var incompleteMessage = TrySummarizeIncompleteResponse(
+                doc.RootElement,
+                failureContext,
+                out var hitOutputTokenLimit);
             if (!string.IsNullOrWhiteSpace(incompleteMessage))
             {
-                return incompleteMessage.Trim();
+                var trimmedMessage = incompleteMessage.Trim();
+
+                if (hitOutputTokenLimit)
+                {
+                    if (_maxOutputTokens < DefaultMaxOutputTokens)
+                    {
+                        _maxOutputTokens = DefaultMaxOutputTokens;
+                        Preferences.Set(MaxTokensPreferenceKey, _maxOutputTokens);
+                        _logger.LogInformation(
+                            "Restored max output tokens preference to default {DefaultTokens} after incomplete {Context} response.",
+                            DefaultMaxOutputTokens,
+                            failureContext);
+
+                        return $"{trimmedMessage} The response limit has been reset to {DefaultMaxOutputTokens} tokens. Please try again.";
+                    }
+
+                    return $"{trimmedMessage} Please try again.";
+                }
+
+                return trimmedMessage;
             }
 
             throw new InvalidOperationException($"OpenAI response did not contain {failureContext} content.");
@@ -660,8 +682,13 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         }
     }
 
-    private static string? TrySummarizeIncompleteResponse(JsonElement root, string failureContext)
+    private static string? TrySummarizeIncompleteResponse(
+        JsonElement root,
+        string failureContext,
+        out bool hitOutputTokenLimit)
     {
+        hitOutputTokenLimit = false;
+
         if (root.ValueKind != JsonValueKind.Object)
         {
             return null;
@@ -692,7 +719,8 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
 
         if (string.Equals(reason, "max_output_tokens", StringComparison.OrdinalIgnoreCase))
         {
-            return $"The {failureContext} response from OpenAI was cut off because it reached the maximum output token limit. Please try again.";
+            hitOutputTokenLimit = true;
+            return $"The {failureContext} response from OpenAI was cut off because it reached the maximum output token limit.";
         }
 
         if (!string.IsNullOrWhiteSpace(reason))
