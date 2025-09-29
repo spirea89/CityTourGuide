@@ -132,11 +132,37 @@
                 Placeholder="Tweak or add your own notes here..."
                 AutoSize="TextChanges" />
 
-        <Button x:Name="WikipediaButton"
-                Grid.Row="9"
-                Text="Fetch Wikipedia summary"
-                Clicked="OnFetchWikipediaClicked"
-                IsVisible="False" />
+        <VerticalStackLayout Grid.Row="9"
+                              Spacing="8">
+            <Button x:Name="WikipediaButton"
+                    Text="Fetch Wikipedia summary"
+                    Clicked="OnFetchWikipediaClicked"
+                    IsVisible="False" />
+            <Button x:Name="FactCheckButton"
+                    Text="Check story facts"
+                    Clicked="OnFactCheckClicked"
+                    IsEnabled="False"
+                    SemanticProperties.Description="Compare the current story with the verified facts and highlight any discrepancies." />
+            <Grid x:Name="FactCheckStatusGrid"
+                  ColumnDefinitions="Auto,*"
+                  ColumnSpacing="8"
+                  IsVisible="False">
+                <ActivityIndicator x:Name="FactCheckIndicator"
+                                    VerticalOptions="Center"
+                                    IsVisible="False"
+                                    IsRunning="False" />
+                <Label x:Name="FactCheckStatusLabel"
+                       Grid.Column="1"
+                       VerticalOptions="Center"
+                       LineBreakMode="WordWrap"
+                       TextColor="{AppThemeBinding Light=#555, Dark=#CCC}" />
+            </Grid>
+            <Label x:Name="FactCheckIssuesLabel"
+                   FontSize="12"
+                   LineBreakMode="WordWrap"
+                   TextColor="{AppThemeBinding Light=#DC2626, Dark=#FCA5A5}"
+                   IsVisible="False" />
+        </VerticalStackLayout>
 
         <Label Grid.Row="10"
                Text="Ask about this place"
