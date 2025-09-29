@@ -1,10 +1,11 @@
-﻿namespace CityTour;
-
-public partial class AppShell : Shell
+namespace CityTour
 {
-    public AppShell()
+    public partial class AppShell : Shell
     {
-        InitializeComponent();
-        Routing.RegisterRoute(nameof(Views.DetailPage), typeof(Views.DetailPage));
+        public AppShell()
+        {
+            InitializeComponent();
+            Routing.RegisterRoute(nameof(Views.DetailPage), typeof(Views.DetailPage));
+        }
     }
 }

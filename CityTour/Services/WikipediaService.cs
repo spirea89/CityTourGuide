@@ -6,10 +6,10 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
-namespace CityTour.Services;
-
-public interface IWikipediaService
+namespace CityTour.Services
 {
+    public interface IWikipediaService
+    {
     Task<WikipediaSummary?> FetchSummaryAsync(
         string buildingName,
         string? address,
@@ -18,17 +18,43 @@ public interface IWikipediaService
         CancellationToken cancellationToken = default);
 }
 
-public sealed record WikipediaSummary(
-    string Title,
-    string NormalizedTitle,
-    string Language,
-    string Url,
-    string? Extract,
-    string? Description,
-    string? LastModified);
+    public sealed class WikipediaSummary
+    {
+        public WikipediaSummary(
+            string title,
+            string normalizedTitle,
+            string language,
+            string url,
+            string? extract,
+            string? description,
+            string? lastModified)
+        {
+            Title = title;
+            NormalizedTitle = normalizedTitle;
+            Language = language;
+            Url = url;
+            Extract = extract;
+            Description = description;
+            LastModified = lastModified;
+        }
 
-public class WikipediaService : IWikipediaService
-{
+        public string Title { get; }
+
+        public string NormalizedTitle { get; }
+
+        public string Language { get; }
+
+        public string Url { get; }
+
+        public string? Extract { get; }
+
+        public string? Description { get; }
+
+        public string? LastModified { get; }
+    }
+
+    public class WikipediaService : IWikipediaService
+    {
     private const string UserAgent = "CityTourGuide/1.0";
 
     private readonly HttpClient _httpClient;
@@ -571,15 +597,38 @@ public class WikipediaService : IWikipediaService
         return builder.ToString();
     }
 
-    private readonly record struct RequestResult(WikipediaSummary? Summary, bool IsSuccess, bool Fatal, string? ErrorMessage)
+    private readonly struct RequestResult
     {
-        public static RequestResult Success(WikipediaSummary summary) =>
-            new(summary, IsSuccess: true, Fatal: false, ErrorMessage: null);
+        public RequestResult(WikipediaSummary? summary, bool isSuccess, bool fatal, string? errorMessage)
+        {
+            Summary = summary;
+            IsSuccess = isSuccess;
+            Fatal = fatal;
+            ErrorMessage = errorMessage;
+        }
 
-        public static RequestResult NotFound() =>
-            new(null, IsSuccess: false, Fatal: false, ErrorMessage: null);
+        public WikipediaSummary? Summary { get; }
 
-        public static RequestResult Failure(string? message, bool fatal) =>
-            new(null, IsSuccess: false, Fatal: fatal, ErrorMessage: message);
+        public bool IsSuccess { get; }
+
+        public bool Fatal { get; }
+
+        public string? ErrorMessage { get; }
+
+        public static RequestResult Success(WikipediaSummary summary)
+        {
+            return new RequestResult(summary, true, false, null);
+        }
+
+        public static RequestResult NotFound()
+        {
+            return new RequestResult(null, false, false, null);
+        }
+
+        public static RequestResult Failure(string? message, bool fatal)
+        {
+            return new RequestResult(null, false, fatal, message);
+        }
     }
+}
 }

@@ -1,14 +1,15 @@
-namespace CityTour.Models;
-
-public sealed class ChatMessage
+namespace CityTour.Models
 {
-    public ChatMessage(string message, bool isUser)
+    public sealed class ChatMessage
     {
-        Message = message;
-        IsUser = isUser;
+        public ChatMessage(string message, bool isUser)
+        {
+            Message = message;
+            IsUser = isUser;
+        }
+
+        public string Message { get; }
+
+        public bool IsUser { get; }
     }
-
-    public string Message { get; }
-
-    public bool IsUser { get; }
 }

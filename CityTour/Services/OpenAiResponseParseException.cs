@@ -1,17 +1,18 @@
 using System;
 
-namespace CityTour.Services;
-
-public sealed class OpenAiResponseParseException : InvalidOperationException
+namespace CityTour.Services
 {
-    public OpenAiResponseParseException(string failureContext, string responseBody, Exception innerException)
-        : base($"Failed to parse the {failureContext} response from OpenAI.", innerException)
+    public sealed class OpenAiResponseParseException : InvalidOperationException
     {
-        FailureContext = failureContext;
-        ResponseBody = responseBody;
+        public OpenAiResponseParseException(string failureContext, string responseBody, Exception innerException)
+            : base($"Failed to parse the {failureContext} response from OpenAI.", innerException)
+        {
+            FailureContext = failureContext;
+            ResponseBody = responseBody;
+        }
+
+        public string FailureContext { get; }
+
+        public string ResponseBody { get; }
     }
-
-    public string FailureContext { get; }
-
-    public string ResponseBody { get; }
 }
