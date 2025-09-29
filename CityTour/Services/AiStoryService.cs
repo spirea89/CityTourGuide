@@ -454,12 +454,12 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
             var choice = choices[0];
             if (choice.ValueKind == JsonValueKind.Object)
             {
-                if (choice.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object && message.TryGetProperty("content", out var messageContent) && messageContent.ValueKind == JsonValueKind.String)
+                if (choice.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object && message.TryGetProperty("content", out var messageContent))
                 {
-                    var legacyContent = messageContent.GetString();
-                    if (!string.IsNullOrWhiteSpace(legacyContent))
+                    var contentText = ExtractTextFromElement(messageContent);
+                    if (!string.IsNullOrWhiteSpace(contentText))
                     {
-                        return legacyContent;
+                        return contentText;
                     }
                 }
 
