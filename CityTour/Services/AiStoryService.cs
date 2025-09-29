@@ -428,6 +428,27 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
             return text;
         }
 
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            if (root.TryGetProperty("response", out var nestedResponse))
+            {
+                text = TryExtractFromResponsesApi(nestedResponse);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+
+            if (root.TryGetProperty("data", out var dataElement))
+            {
+                text = ExtractTextFromElement(dataElement);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+        }
+
         if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
         {
             var choice = choices[0];
