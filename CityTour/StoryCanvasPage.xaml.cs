@@ -63,6 +63,8 @@ public partial class StoryCanvasPage : ContentPage
     private bool _isWikipediaBusy;
     private string? _lastFailedResponseBody;
     private bool _isUpdatingMaxTokens;
+    private CancellationTokenSource? _factCheckCts;
+    private bool _isFactChecking;
 
     public StoryCanvasPage(
         string placeId,
@@ -115,6 +117,7 @@ public partial class StoryCanvasPage : ContentPage
         UpdateAudioControls();
         UpdateChatControls();
         UpdateWikipediaControls();
+        UpdateFactCheckControls();
     }
 
     protected override void OnAppearing()
@@ -139,6 +142,9 @@ public partial class StoryCanvasPage : ContentPage
         _wikipediaCts?.Cancel();
         _wikipediaCts?.Dispose();
         _wikipediaCts = null;
+        _factCheckCts?.Cancel();
+        _factCheckCts?.Dispose();
+        _factCheckCts = null;
     }
 
     private async Task GenerateStoryAsync(bool userInitiated = false)
@@ -180,6 +186,8 @@ public partial class StoryCanvasPage : ContentPage
                 {
                     SyncMaxTokensFromService(clearErrors: true);
                 }
+                ResetFactCheckResults();
+                UpdateFactCheckControls();
             });
 
             _lastFailedResponseBody = null;
@@ -683,6 +691,15 @@ public partial class StoryCanvasPage : ContentPage
         });
     }
 
+    private void UpdateFactCheckControls()
+    {
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            var hasStory = !string.IsNullOrWhiteSpace(StoryEditor.Text);
+            FactCheckButton.IsEnabled = hasStory && !_isFactChecking;
+        });
+    }
+
     private async void OnFetchWikipediaClicked(object? sender, EventArgs e)
     {
         if (_isWikipediaBusy)
@@ -756,6 +773,181 @@ public partial class StoryCanvasPage : ContentPage
             _isWikipediaBusy = false;
             UpdateWikipediaControls();
         }
+    }
+
+    private async void OnFactCheckClicked(object? sender, EventArgs e)
+    {
+        if (_isFactChecking)
+        {
+            return;
+        }
+
+        var story = StoryEditor.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(story))
+        {
+            await DisplayAlert("Story unavailable", "There's no story to check right now.", "OK");
+            return;
+        }
+
+        _factCheckCts?.Cancel();
+        _factCheckCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _factCheckCts = cts;
+
+        try
+        {
+            await SetFactCheckBusyStateAsync(true, "Checking story facts…");
+
+            var address = GetAddressForStory();
+            var result = await _storyService.VerifyStoryFactsAsync(
+                _buildingName,
+                address,
+                story,
+                _buildingFacts,
+                cts.Token);
+
+            cts.Token.ThrowIfCancellationRequested();
+
+            await ShowFactCheckResultAsync(result);
+        }
+        catch (OperationCanceledException)
+        {
+            await ShowFactCheckCanceledAsync();
+        }
+        catch (Exception ex)
+        {
+            await ShowFactCheckErrorAsync(ex.Message);
+            await DisplayAlert("Fact check failed", ex.Message, "OK");
+        }
+        finally
+        {
+            if (ReferenceEquals(_factCheckCts, cts))
+            {
+                _factCheckCts = null;
+            }
+
+            cts.Dispose();
+        }
+    }
+
+    private Task SetFactCheckBusyStateAsync(bool isBusy, string statusMessage)
+    {
+        return MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            _isFactChecking = isBusy;
+            FactCheckButton.IsEnabled = !isBusy && !string.IsNullOrWhiteSpace(StoryEditor.Text);
+            FactCheckStatusGrid.IsVisible = true;
+            FactCheckIndicator.IsVisible = isBusy;
+            FactCheckIndicator.IsRunning = isBusy;
+            FactCheckStatusLabel.Text = statusMessage;
+            FactCheckIssuesLabel.IsVisible = false;
+        });
+    }
+
+    private Task ShowFactCheckCanceledAsync()
+    {
+        return MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            _isFactChecking = false;
+            FactCheckButton.IsEnabled = !string.IsNullOrWhiteSpace(StoryEditor.Text);
+            FactCheckIndicator.IsVisible = false;
+            FactCheckIndicator.IsRunning = false;
+            FactCheckStatusGrid.IsVisible = true;
+            FactCheckStatusLabel.Text = "Fact check canceled.";
+            FactCheckIssuesLabel.IsVisible = false;
+        });
+    }
+
+    private Task ShowFactCheckResultAsync(StoryFactCheckResult result)
+    {
+        return MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            _isFactChecking = false;
+            FactCheckButton.IsEnabled = !string.IsNullOrWhiteSpace(StoryEditor.Text);
+            FactCheckIndicator.IsVisible = false;
+            FactCheckIndicator.IsRunning = false;
+            FactCheckStatusGrid.IsVisible = true;
+
+            var verdictLabel = result.Verdict switch
+            {
+                "aligned" => "All story details align with the verified facts.",
+                "mixed" => "Some details align, but a few need attention.",
+                "issues" => "The story contains details that conflict with the facts.",
+                "insufficient_data" => "Not enough verified facts are available to confirm the story.",
+                _ => "Fact check completed."
+            };
+
+            if (!string.IsNullOrWhiteSpace(result.Summary))
+            {
+                FactCheckStatusLabel.Text = result.Summary.Trim();
+            }
+            else
+            {
+                FactCheckStatusLabel.Text = verdictLabel;
+            }
+
+            if (result.Warnings.Count > 0)
+            {
+                var builder = new StringBuilder();
+                foreach (var warning in result.Warnings)
+                {
+                    if (builder.Length > 0)
+                    {
+                        builder.AppendLine();
+                        builder.AppendLine();
+                    }
+
+                    builder.Append("• ");
+                    builder.Append(warning.Claim);
+                    if (!string.IsNullOrWhiteSpace(warning.Issue))
+                    {
+                        builder.Append(" — ");
+                        builder.Append(warning.Issue.Trim());
+                    }
+                    if (!string.IsNullOrWhiteSpace(warning.Recommendation))
+                    {
+                        builder.Append(" (" + warning.Recommendation.Trim() + ")");
+                    }
+                }
+
+                FactCheckIssuesLabel.Text = builder.ToString();
+                FactCheckIssuesLabel.IsVisible = true;
+            }
+            else
+            {
+                FactCheckIssuesLabel.Text = string.Empty;
+                FactCheckIssuesLabel.IsVisible = false;
+            }
+        });
+    }
+
+    private Task ShowFactCheckErrorAsync(string message)
+    {
+        return MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            _isFactChecking = false;
+            FactCheckButton.IsEnabled = !string.IsNullOrWhiteSpace(StoryEditor.Text);
+            FactCheckIndicator.IsVisible = false;
+            FactCheckIndicator.IsRunning = false;
+            FactCheckStatusGrid.IsVisible = true;
+            FactCheckStatusLabel.Text = $"Could not verify the story. {message}";
+            FactCheckIssuesLabel.IsVisible = false;
+        });
+    }
+
+    private void ResetFactCheckResults()
+    {
+        if (_isFactChecking)
+        {
+            return;
+        }
+
+        FactCheckStatusGrid.IsVisible = false;
+        FactCheckIndicator.IsVisible = false;
+        FactCheckIndicator.IsRunning = false;
+        FactCheckStatusLabel.Text = string.Empty;
+        FactCheckIssuesLabel.Text = string.Empty;
+        FactCheckIssuesLabel.IsVisible = false;
     }
 
     private Task AppendWikipediaSummaryAsync(WikipediaSummary summary)
@@ -985,6 +1177,8 @@ public partial class StoryCanvasPage : ContentPage
     private void OnStoryTextChanged(object? sender, TextChangedEventArgs e)
     {
         UpdateAudioControls();
+        ResetFactCheckResults();
+        UpdateFactCheckControls();
     }
 
     private async void OnListenClicked(object? sender, EventArgs e)
