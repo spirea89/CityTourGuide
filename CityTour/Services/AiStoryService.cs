@@ -149,7 +149,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         }
 
         var prompt = BuildStoryPrompt(buildingName, buildingAddress, category, facts, language);
-        var story = await SendResponseAsync(prompt, 0.8, 600, "story", cancellationToken);
+        var story = await SendResponseAsync(prompt, 600, "story", cancellationToken);
 
         return new StoryGenerationResult(story, prompt);
     }
@@ -274,7 +274,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         }
 
         var prompt = BuildFollowUpPrompt(buildingName, buildingAddress, currentStory, question);
-        return await SendResponseAsync(prompt, 0.7, 400, "follow-up answer", cancellationToken);
+        return await SendResponseAsync(prompt, 400, "follow-up answer", cancellationToken);
     }
 
     private string BuildFollowUpPrompt(
@@ -315,7 +315,6 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
 
     private async Task<string> SendResponseAsync(
         string prompt,
-        double temperature,
         int maxOutputTokens,
         string failureContext,
         CancellationToken cancellationToken)
@@ -344,7 +343,6 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
                     }
                 }
             },
-            temperature,
             max_output_tokens = maxOutputTokens
         };
 
