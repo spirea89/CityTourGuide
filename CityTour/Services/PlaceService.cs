@@ -1,25 +1,29 @@
-﻿using System.Text.Json;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Microsoft.Maui.Storage;
+using System.Text.Json;
 using CityTour.Models;
+using Microsoft.Maui.Storage;
 
-namespace CityTour.Services;
-
-public class PlaceService
+namespace CityTour.Services
 {
-    private List<Place> _places = new();
-
-    public PlaceService()
+    public class PlaceService
     {
-        using var stream = FileSystem.OpenAppPackageFileAsync("places.json").Result;
-        using var reader = new StreamReader(stream);
-        var json = reader.ReadToEnd();
-        var list = JsonSerializer.Deserialize<List<Place>>(json);
-        if (list != null)
-            _places = list;
-    }
+        private List<Place> _places = new List<Place>();
 
-    public IEnumerable<Place> GetAll() => _places;
-    public Place? GetById(string id) => _places.FirstOrDefault(p => p.Id == id);
+        public PlaceService()
+        {
+            using var stream = FileSystem.OpenAppPackageFileAsync("places.json").Result;
+            using var reader = new StreamReader(stream);
+            var json = reader.ReadToEnd();
+            var list = JsonSerializer.Deserialize<List<Place>>(json);
+            if (list != null)
+            {
+                _places = list;
+            }
+        }
+
+        public IEnumerable<Place> GetAll() => _places;
+        public Place? GetById(string id) => _places.FirstOrDefault(p => p.Id == id);
+    }
 }

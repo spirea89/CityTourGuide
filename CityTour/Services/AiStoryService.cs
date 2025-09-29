@@ -9,10 +9,10 @@ using CityTour.Models;
 using Microsoft.Maui.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace CityTour.Services;
-
-public interface IAiStoryService
+namespace CityTour.Services
 {
+    public interface IAiStoryService
+    {
     string CurrentModel { get; }
     int MaxOutputTokens { get; }
     int MinSupportedOutputTokens { get; }
@@ -51,8 +51,8 @@ public interface IAiStoryService
     void SetMaxOutputTokens(int maxTokens);
 }
 
-public class AiStoryService : IAiStoryService
-{
+    public class AiStoryService : IAiStoryService
+    {
     private const string DefaultModel = "gpt-5";
     private const string ModelPreferenceKey = "ai.story.model";
     private const string MaxTokensPreferenceKey = "ai.story.max_tokens";
@@ -118,7 +118,7 @@ TASK:
 Tell a cheerful 90–110 word story using simple sentences, fun comparisons or sounds, one exciting fact from the list, no frightening content, and end with a question that invites kids to spot something when they arrive.
 """;
 
-    private static readonly JsonSerializerOptions RequestJsonOptions = new()
+    private static readonly JsonSerializerOptions RequestJsonOptions = new JsonSerializerOptions()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
@@ -1002,4 +1002,5 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
 
         return null;
     }
+}
 }
