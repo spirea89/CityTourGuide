@@ -59,11 +59,8 @@ namespace CityTour.Services
     private const int DefaultMaxOutputTokens = 600;
     private const int MinimumOutputTokens = 200;
     private const int MaximumOutputTokens = 4096;
-    private const string SystemMessage = """
-You are a creative yet trustworthy city tour guide. Base every response strictly on the verified facts supplied by the user. If the prompt says information is missing, acknowledge the gap instead of inventing details. Keep the tone welcoming and vivid while staying factual.
-""";
-    private const string HistoryPromptTemplate = """
-You are a meticulous local historian introducing visitors to {building_name} at {address}. Write the story in {language}.
+    private const string SystemMessage = @"You are a creative yet trustworthy city tour guide. Base every response strictly on the verified facts supplied by the user. If the prompt says information is missing, acknowledge the gap instead of inventing details. Keep the tone welcoming and vivid while staying factual.";
+    private const string HistoryPromptTemplate = @"You are a meticulous local historian introducing visitors to {building_name} at {address}. Write the story in {language}.
 
 Work only with the verified facts listed below. If a detail is absent, say so rather than guessing.
 
@@ -71,10 +68,8 @@ FACTS:
 {facts}
 
 TASK:
-Write a chronological 120–150 word history that highlights the founding date, any name changes, two to three pivotal events, and why the place matters today. Keep the tone warm but precise.
-""";
-    private const string PersonalitiesPromptTemplate = """
-You are a culturally savvy guide explaining the people connected to {building_name} at {address}. Respond in {language}.
+Write a chronological 120–150 word history that highlights the founding date, any name changes, two to three pivotal events, and why the place matters today. Keep the tone warm but precise.";
+    private const string PersonalitiesPromptTemplate = @"You are a culturally savvy guide explaining the people connected to {building_name} at {address}. Respond in {language}.
 
 Use only the verified facts below. If information about a figure is missing, be transparent about the uncertainty.
 
@@ -82,10 +77,8 @@ FACTS:
 {facts}
 
 TASK:
-Craft a 110–140 word mini-story that weaves in two to three notable figures with full names, relevant dates, their roles, and one concrete anecdote each.
-""";
-    private const string ArchitecturePromptTemplate = """
-You are an architect talking to curious visitors about {building_name} at {address}. Answer in {language}.
+Craft a 110–140 word mini-story that weaves in two to three notable figures with full names, relevant dates, their roles, and one concrete anecdote each.";
+    private const string ArchitecturePromptTemplate = @"You are an architect talking to curious visitors about {building_name} at {address}. Answer in {language}.
 
 Ground every observation in the verified facts provided. Do not speculate about elements that are not documented.
 
@@ -93,10 +86,8 @@ FACTS:
 {facts}
 
 TASK:
-Describe the site's architectural style, architect, era, materials, notable façade or interior details, significant alterations, and two street-level features to notice in roughly 120–150 words.
-""";
-    private const string TodayPromptTemplate = """
-You are a practical local host briefing visitors about {building_name} at {address}. Respond in {language}.
+Describe the site's architectural style, architect, era, materials, notable façade or interior details, significant alterations, and two street-level features to notice in roughly 120–150 words.";
+    private const string TodayPromptTemplate = @"You are a practical local host briefing visitors about {building_name} at {address}. Respond in {language}.
 
 Rely only on the verified facts below. If a requested detail is missing, clearly note that it is not documented.
 
@@ -104,10 +95,8 @@ FACTS:
 {facts}
 
 TASK:
-Summarize in 90–120 words the current purpose or occupants, public access details (such as hours, ticketing, accessibility), photo or etiquette guidance, and one nearby tip.
-""";
-    private const string KidsPromptTemplate = """
-You are a playful storyteller for children aged 6–10 visiting {building_name} at {address}. Tell the tale in {language}.
+Summarize in 90–120 words the current purpose or occupants, public access details (such as hours, ticketing, accessibility), photo or etiquette guidance, and one nearby tip.";
+    private const string KidsPromptTemplate = @"You are a playful storyteller for children aged 6–10 visiting {building_name} at {address}. Tell the tale in {language}.
 
 Stick to the verified facts. Highlight what is known and gently mention when a detail is unknown.
 
@@ -115,8 +104,7 @@ FACTS:
 {facts}
 
 TASK:
-Tell a cheerful 90–110 word story using simple sentences, fun comparisons or sounds, one exciting fact from the list, no frightening content, and end with a question that invites kids to spot something when they arrive.
-""";
+Tell a cheerful 90–110 word story using simple sentences, fun comparisons or sounds, one exciting fact from the list, no frightening content, and end with a question that invites kids to spot something when they arrive.";
 
     private static readonly JsonSerializerOptions RequestJsonOptions = new JsonSerializerOptions()
     {
