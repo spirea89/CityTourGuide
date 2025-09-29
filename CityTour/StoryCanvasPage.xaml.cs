@@ -12,10 +12,10 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 
-namespace CityTour;
-
-public partial class StoryCanvasPage : ContentPage
+namespace CityTour
 {
+    public partial class StoryCanvasPage : ContentPage
+    {
     private readonly string _placeId;
     private readonly string _buildingName;
     private readonly string? _displayAddress;
@@ -30,21 +30,21 @@ public partial class StoryCanvasPage : ContentPage
     private bool _hasTriggeredInitialGeneration;
     private bool _isInitializingCategory;
     private StoryCategory _selectedCategory;
-    private readonly List<StoryCategoryOption> _categoryOptions = new()
+    private readonly List<StoryCategoryOption> _categoryOptions = new List<StoryCategoryOption>
     {
-        new("History", StoryCategory.History),
-        new("Personalities", StoryCategory.Personalities),
-        new("Architecture", StoryCategory.Architecture),
-        new("Today", StoryCategory.Today),
-        new("Kids", StoryCategory.Kids)
+        new StoryCategoryOption("History", StoryCategory.History),
+        new StoryCategoryOption("Personalities", StoryCategory.Personalities),
+        new StoryCategoryOption("Architecture", StoryCategory.Architecture),
+        new StoryCategoryOption("Today", StoryCategory.Today),
+        new StoryCategoryOption("Kids", StoryCategory.Kids)
     };
-    private readonly List<ModelOption> _modelOptions = new()
+    private readonly List<ModelOption> _modelOptions = new List<ModelOption>
     {
-        new("GPT-5", "gpt-5", "Latest flagship reasoning"),
-        new("GPT-4.1", "gpt-4.1", "Previous generation high quality"),
-        new("GPT-4.1 mini", "gpt-4.1-mini", "Smarter reasoning, moderate speed"),
-        new("GPT-4o", "gpt-4o", "Balanced quality and cost"),
-        new("GPT-4o mini", "gpt-4o-mini", "Fast and cost-efficient")
+        new ModelOption("GPT-5", "gpt-5", "Latest flagship reasoning"),
+        new ModelOption("GPT-4.1", "gpt-4.1", "Previous generation high quality"),
+        new ModelOption("GPT-4.1 mini", "gpt-4.1-mini", "Smarter reasoning, moderate speed"),
+        new ModelOption("GPT-4o", "gpt-4o", "Balanced quality and cost"),
+        new ModelOption("GPT-4o mini", "gpt-4o-mini", "Fast and cost-efficient")
     };
     private ModelOption? _selectedModel;
     private bool _isInitializingModel;
@@ -52,8 +52,8 @@ public partial class StoryCanvasPage : ContentPage
     private bool _isSpeaking;
     private bool _isLoadingVoices;
     private bool _hasAttemptedVoiceLoad;
-    private List<LocaleOption> _voiceOptions = new();
-    private readonly ObservableCollection<ChatMessage> _chatMessages = new();
+    private List<LocaleOption> _voiceOptions = new List<LocaleOption>();
+    private readonly ObservableCollection<ChatMessage> _chatMessages = new ObservableCollection<ChatMessage>();
     private CancellationTokenSource? _chatCts;
     private bool _isChatBusy;
     private const string ChatReadyStatusMessage = "Ask the guide for more details about this address.";
@@ -1414,4 +1414,5 @@ public partial class StoryCanvasPage : ContentPage
                 : $"{display} ({name})";
         }
     }
+}
 }
