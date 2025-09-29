@@ -6,7 +6,27 @@
     xmlns:models="clr-namespace:CityTour.Models"
     Padding="16">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
         <Grid Grid.Row="0"
               ColumnDefinitions="*,Auto"
@@ -60,7 +80,32 @@
                     SelectedIndexChanged="OnModelChanged" />
         </StackLayout>
 
-        <Grid Grid.Row="5"
+        <StackLayout Grid.Row="5"
+                     Spacing="4">
+            <Label Text="Max AI response tokens"
+                   FontAttributes="Bold"
+                   FontSize="14" />
+            <Entry x:Name="MaxTokensEntry"
+                   Keyboard="Numeric"
+                   MaxLength="5"
+                   Placeholder="e.g. 900"
+                   ReturnType="Done"
+                   TextChanged="OnMaxTokensEntryTextChanged"
+                   Completed="OnMaxTokensEntryCompleted"
+                   Unfocused="OnMaxTokensEntryUnfocused"
+                   SemanticProperties.Description="Set the maximum number of tokens the AI may use when answering." />
+            <Label x:Name="MaxTokensInfoLabel"
+                   FontSize="12"
+                   LineBreakMode="WordWrap"
+                   TextColor="{AppThemeBinding Light=#555, Dark=#CCC}" />
+            <Label x:Name="MaxTokensErrorLabel"
+                   FontSize="12"
+                   LineBreakMode="WordWrap"
+                   TextColor="{AppThemeBinding Light=#DC2626, Dark=#FCA5A5}"
+                   IsVisible="False" />
+        </StackLayout>
+
+        <Grid Grid.Row="6"
               ColumnDefinitions="Auto,*"
               ColumnSpacing="8">
             <ActivityIndicator x:Name="LoadingIndicator"
@@ -74,28 +119,28 @@
         </Grid>
 
         <Button x:Name="ShowParseResponseButton"
-                Grid.Row="6"
+                Grid.Row="7"
                 Text="Show OpenAI response"
                 SemanticProperties.Description="Show the raw response returned by OpenAI when parsing fails."
                 Clicked="OnShowParseResponseClicked"
                 IsVisible="False" />
 
         <Editor x:Name="StoryEditor"
-                Grid.Row="7"
+                Grid.Row="8"
                 Placeholder="Tweak or add your own notes here..."
                 AutoSize="TextChanges" />
 
         <Button x:Name="WikipediaButton"
-                Grid.Row="8"
+                Grid.Row="9"
                 Text="Fetch Wikipedia summary"
                 Clicked="OnFetchWikipediaClicked" />
 
-        <Label Grid.Row="9"
+        <Label Grid.Row="10"
                Text="Ask about this place"
                FontSize="14"
                FontAttributes="Bold" />
 
-        <Grid Grid.Row="10"
+        <Grid Grid.Row="11"
               ColumnDefinitions="Auto,*"
               ColumnSpacing="8">
             <ActivityIndicator x:Name="ChatLoadingIndicator"
@@ -110,7 +155,7 @@
         </Grid>
 
         <CollectionView x:Name="ChatCollectionView"
-                        Grid.Row="11"
+                        Grid.Row="12"
                         BackgroundColor="Transparent"
                         SelectionMode="None"
                         VerticalScrollBarVisibility="Never">
@@ -149,7 +194,7 @@
             </CollectionView.ItemTemplate>
         </CollectionView>
 
-        <Grid Grid.Row="12"
+        <Grid Grid.Row="13"
               ColumnDefinitions="*,Auto"
               ColumnSpacing="8">
             <Entry x:Name="ChatEntry"
@@ -163,7 +208,7 @@
                     Clicked="OnSendChatClicked" />
         </Grid>
 
-        <StackLayout Grid.Row="13"
+        <StackLayout Grid.Row="14"
                      Spacing="4">
             <Label Text="Voice"
                    FontAttributes="Bold"
@@ -173,7 +218,7 @@
                     ItemDisplayBinding="{Binding DisplayName}" />
         </StackLayout>
 
-        <Grid Grid.Row="14"
+        <Grid Grid.Row="15"
               ColumnDefinitions="*,*"
               ColumnSpacing="8">
             <Button x:Name="ListenButton"
@@ -187,11 +232,11 @@
         </Grid>
 
         <Button x:Name="RegenerateButton"
-                Grid.Row="15"
+                Grid.Row="16"
                 Text="Regenerate story"
                 Clicked="OnRegenerateClicked" />
 
-        <Button Grid.Row="16"
+        <Button Grid.Row="17"
                 Text="Close"
                 Clicked="OnCloseClicked" />
     </Grid>
