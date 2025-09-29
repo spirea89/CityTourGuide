@@ -525,6 +525,15 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
                 return element.GetString();
             case JsonValueKind.Object:
             {
+                if (element.TryGetProperty("value", out var valueProperty))
+                {
+                    var valueText = ExtractTextFromElement(valueProperty);
+                    if (!string.IsNullOrWhiteSpace(valueText))
+                    {
+                        return valueText;
+                    }
+                }
+
                 if (element.TryGetProperty("text", out var textProperty))
                 {
                     var text = ExtractTextFromElement(textProperty);
@@ -555,6 +564,20 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
                 if (element.TryGetProperty("output_text", out var nestedOutputText))
                 {
                     var text = ExtractTextFromElement(nestedOutputText);
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text;
+                    }
+                }
+
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.NameEquals("type") || property.NameEquals("role") || property.NameEquals("id"))
+                    {
+                        continue;
+                    }
+
+                    var text = ExtractTextFromElement(property.Value);
                     if (!string.IsNullOrWhiteSpace(text))
                     {
                         return text;
