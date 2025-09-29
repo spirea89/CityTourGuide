@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CityTour.Models;
 using Microsoft.Maui.Storage;
 using Microsoft.Extensions.Logging;
@@ -29,6 +31,13 @@ public interface IAiStoryService
         string? buildingAddress,
         string? currentStory,
         string question,
+        CancellationToken cancellationToken = default);
+
+    Task<StoryFactCheckResult> VerifyStoryFactsAsync(
+        string buildingName,
+        string? buildingAddress,
+        string story,
+        string? facts = null,
         CancellationToken cancellationToken = default);
 
     string BuildStoryPrompt(
@@ -109,6 +118,56 @@ TASK:
 Tell a cheerful 90–110 word story using simple sentences, fun comparisons or sounds, one exciting fact from the list, no frightening content, and end with a question that invites kids to spot something when they arrive.
 """;
 
+    private static readonly JsonSerializerOptions RequestJsonOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    private static readonly object FactCheckResponseFormat = new
+    {
+        type = "json_schema",
+        json_schema = new
+        {
+            name = "story_fact_check",
+            schema = new
+            {
+                type = "object",
+                additionalProperties = false,
+                required = new[] { "overall_verdict", "summary", "confirmed_facts", "warnings" },
+                properties = new
+                {
+                    overall_verdict = new
+                    {
+                        type = "string",
+                        enum = new[] { "aligned", "mixed", "issues", "insufficient_data" }
+                    },
+                    summary = new { type = "string" },
+                    confirmed_facts = new
+                    {
+                        type = "array",
+                        items = new { type = "string" }
+                    },
+                    warnings = new
+                    {
+                        type = "array",
+                        items = new
+                        {
+                            type = "object",
+                            additionalProperties = false,
+                            required = new[] { "claim", "issue", "recommendation" },
+                            properties = new
+                            {
+                                claim = new { type = "string" },
+                                issue = new { type = "string" },
+                                recommendation = new { type = "string" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiStoryService> _logger;
     private readonly IApiKeyProvider _apiKeyProvider;
@@ -183,6 +242,39 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         var story = await SendResponseAsync(prompt, _maxOutputTokens, "story", cancellationToken);
 
         return new StoryGenerationResult(story, prompt);
+    }
+
+    public async Task<StoryFactCheckResult> VerifyStoryFactsAsync(
+        string buildingName,
+        string? buildingAddress,
+        string story,
+        string? facts = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(buildingName) && string.IsNullOrWhiteSpace(buildingAddress))
+        {
+            throw new ArgumentException("A building name or address is required.", nameof(buildingName));
+        }
+
+        if (string.IsNullOrWhiteSpace(story))
+        {
+            throw new ArgumentException("Story text is required for fact checking.", nameof(story));
+        }
+
+        var prompt = BuildFactCheckPrompt(buildingName, buildingAddress, story, facts);
+        var response = await SendResponseAsync(
+            prompt,
+            800,
+            "fact check",
+            cancellationToken,
+            FactCheckResponseFormat);
+
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            throw new InvalidOperationException("OpenAI did not return fact-check results.");
+        }
+
+        return ParseFactCheckResult(response);
     }
 
     public string BuildStoryPrompt(
@@ -348,7 +440,8 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         string prompt,
         int maxOutputTokens,
         string failureContext,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        object? responseFormat = null)
     {
         var key = GetOrThrowApiKey();
         var attemptTokens = ClampOutputTokens(maxOutputTokens);
@@ -377,12 +470,13 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
                         }
                     }
                 },
-                max_output_tokens = attemptTokens
+                max_output_tokens = attemptTokens,
+                response_format = responseFormat
             };
 
             using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            request.Content = new StringContent(JsonSerializer.Serialize(payload, RequestJsonOptions), Encoding.UTF8, "application/json");
 
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             var responseBody = await response.Content.ReadAsStringAsync();
@@ -442,6 +536,121 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
                 _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
                 throw new OpenAiResponseParseException(failureContext, responseBody, ex);
             }
+        }
+    }
+
+    private string BuildFactCheckPrompt(
+        string buildingName,
+        string? buildingAddress,
+        string story,
+        string? facts)
+    {
+        var builder = new StringBuilder();
+        var resolvedName = ResolveBuildingName(buildingName, buildingAddress);
+        var resolvedAddress = ResolveAddress(buildingAddress);
+        var resolvedFacts = ResolveFacts(facts);
+
+        builder.AppendLine($"You are fact-checking a guided tour story about {resolvedName} at {resolvedAddress}.");
+        builder.AppendLine("Use only the verified facts list to assess accuracy. Do not rely on outside knowledge.");
+        builder.AppendLine("If the facts list indicates no verified facts were provided, set overall_verdict to \"insufficient_data\" and leave warnings empty.");
+        builder.AppendLine("Otherwise, flag every mismatch or unsupported embellishment as a warning with a clear recommendation.");
+        builder.AppendLine("Summaries must be one sentence that states the verdict and guidance for the guide.");
+        builder.AppendLine("Return JSON that exactly matches the provided response schema.");
+        builder.AppendLine();
+        builder.AppendLine("Verified facts:");
+        builder.AppendLine(resolvedFacts);
+        builder.AppendLine();
+        builder.AppendLine("Story to review:");
+        builder.AppendLine(story.Trim());
+
+        return builder.ToString().Trim();
+    }
+
+    private static StoryFactCheckResult ParseFactCheckResult(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidOperationException("Fact-check response was not a JSON object.");
+            }
+
+            var verdict = root.TryGetProperty("overall_verdict", out var verdictElement)
+                && verdictElement.ValueKind == JsonValueKind.String
+                    ? verdictElement.GetString()
+                    : null;
+
+            var summary = root.TryGetProperty("summary", out var summaryElement)
+                && summaryElement.ValueKind == JsonValueKind.String
+                    ? summaryElement.GetString()
+                    : null;
+
+            var confirmed = new List<string>();
+            if (root.TryGetProperty("confirmed_facts", out var confirmedElement)
+                && confirmedElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in confirmedElement.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        var text = item.GetString();
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            confirmed.Add(text.Trim());
+                        }
+                    }
+                }
+            }
+
+            var warnings = new List<FactCheckWarning>();
+            if (root.TryGetProperty("warnings", out var warningsElement)
+                && warningsElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in warningsElement.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    var claim = item.TryGetProperty("claim", out var claimElement)
+                        && claimElement.ValueKind == JsonValueKind.String
+                            ? claimElement.GetString()
+                            : null;
+
+                    var issue = item.TryGetProperty("issue", out var issueElement)
+                        && issueElement.ValueKind == JsonValueKind.String
+                            ? issueElement.GetString()
+                            : null;
+
+                    var recommendation = item.TryGetProperty("recommendation", out var recommendationElement)
+                        && recommendationElement.ValueKind == JsonValueKind.String
+                            ? recommendationElement.GetString()
+                            : null;
+
+                    if (string.IsNullOrWhiteSpace(claim) && string.IsNullOrWhiteSpace(issue) && string.IsNullOrWhiteSpace(recommendation))
+                    {
+                        continue;
+                    }
+
+                    warnings.Add(new FactCheckWarning(
+                        claim?.Trim() ?? string.Empty,
+                        issue?.Trim() ?? string.Empty,
+                        recommendation?.Trim() ?? string.Empty));
+                }
+            }
+
+            return new StoryFactCheckResult(
+                string.IsNullOrWhiteSpace(verdict) ? "aligned" : verdict.Trim(),
+                summary?.Trim() ?? string.Empty,
+                confirmed,
+                warnings);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("OpenAI returned fact-check data in an unexpected format.", ex);
         }
     }
 
