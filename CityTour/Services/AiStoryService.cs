@@ -720,7 +720,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         if (string.Equals(reason, "max_output_tokens", StringComparison.OrdinalIgnoreCase))
         {
             hitOutputTokenLimit = true;
-            return $"The {failureContext} response from OpenAI was cut off because it reached the maximum output token limit.";
+            return $"OpenAI truncated the {failureContext} response after reaching the maximum output token limit. Increase the Max AI response tokens setting and try again.";
         }
 
         if (!string.IsNullOrWhiteSpace(reason))
