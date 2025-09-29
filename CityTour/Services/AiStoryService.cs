@@ -379,7 +379,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
             _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
-            throw new InvalidOperationException($"Failed to parse the {failureContext} response from OpenAI.", ex);
+            throw new OpenAiResponseParseException(failureContext, responseBody, ex);
         }
     }
 
