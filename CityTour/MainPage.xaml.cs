@@ -13,18 +13,18 @@ using System.Threading.Tasks;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Storage; // Preferences
 
-namespace CityTour;
-
-public partial class MainPage : ContentPage
+namespace CityTour
 {
+    public partial class MainPage : ContentPage
+    {
     private readonly PlaceService _service;
     private readonly IAiStoryService _storyService;
     private readonly IApiKeyProvider _apiKeys;
     private readonly IWikipediaService _wikipediaService;
-    private List<Place> _allPlaces = new();
+    private List<Place> _allPlaces = new List<Place>();
 
     // Google Places (Web)
-    private readonly HttpClient _http = new();
+    private readonly HttpClient _http = new HttpClient();
 
     // Live suggestions
     private CancellationTokenSource? _typeCts;
@@ -713,4 +713,5 @@ iframe {{ border: 0; width: 100%; height: 100%; border-radius: 12px; }}
         public double Longitude { get; set; }
         public DateTime SavedAtUtc { get; set; }
     }
+}
 }

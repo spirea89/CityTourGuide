@@ -1,10 +1,11 @@
-namespace CityTour.Models;
-
-public enum StoryCategory
+namespace CityTour.Models
 {
-    History,
-    Personalities,
-    Architecture,
-    Today,
-    Kids
+    public enum StoryCategory
+    {
+        History,
+        Personalities,
+        Architecture,
+        Today,
+        Kids
+    }
 }

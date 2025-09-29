@@ -1,3 +1,15 @@
-namespace CityTour.Models;
+namespace CityTour.Models
+{
+    public sealed class StoryGenerationResult
+    {
+        public StoryGenerationResult(string story, string prompt)
+        {
+            Story = story;
+            Prompt = prompt;
+        }
 
-public sealed record StoryGenerationResult(string Story, string Prompt);
+        public string Story { get; }
+
+        public string Prompt { get; }
+    }
+}
