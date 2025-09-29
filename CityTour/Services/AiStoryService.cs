@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
@@ -350,94 +351,97 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         CancellationToken cancellationToken)
     {
         var key = GetOrThrowApiKey();
+        var attemptTokens = ClampOutputTokens(maxOutputTokens);
 
-        var payload = new
+        while (true)
         {
-            model = _model,
-            input = new object[]
+            var payload = new
             {
-                new
+                model = _model,
+                input = new object[]
                 {
-                    role = "system",
-                    content = new object[]
+                    new
                     {
-                        new { type = "input_text", text = SystemMessage }
+                        role = "system",
+                        content = new object[]
+                        {
+                            new { type = "input_text", text = SystemMessage }
+                        }
+                    },
+                    new
+                    {
+                        role = "user",
+                        content = new object[]
+                        {
+                            new { type = "input_text", text = prompt }
+                        }
                     }
                 },
-                new
-                {
-                    role = "user",
-                    content = new object[]
-                    {
-                        new { type = "input_text", text = prompt }
-                    }
-                }
-            },
-            max_output_tokens = maxOutputTokens
-        };
+                max_output_tokens = attemptTokens
+            };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync();
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            var responseBody = await response.Content.ReadAsStringAsync();
 
-        if (!response.IsSuccessStatusCode)
-        {
-            var errorMessage = TryExtractErrorMessage(responseBody);
-            var friendlyMessage = string.IsNullOrWhiteSpace(errorMessage)
-                ? $"OpenAI API error ({(int)response.StatusCode})."
-                : $"OpenAI API error ({(int)response.StatusCode}): {errorMessage}";
-
-            _logger.LogError("OpenAI API returned {Status}: {Body}", response.StatusCode, responseBody);
-            throw new InvalidOperationException(friendlyMessage);
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(responseBody);
-            var content = TryExtractPrimaryText(doc.RootElement);
-
-            if (!string.IsNullOrWhiteSpace(content))
+            if (!response.IsSuccessStatusCode)
             {
-                return content.Trim();
+                var errorMessage = TryExtractErrorMessage(responseBody);
+                var friendlyMessage = string.IsNullOrWhiteSpace(errorMessage)
+                    ? $"OpenAI API error ({(int)response.StatusCode})."
+                    : $"OpenAI API error ({(int)response.StatusCode}): {errorMessage}";
+
+                _logger.LogError("OpenAI API returned {Status}: {Body}", response.StatusCode, responseBody);
+                throw new InvalidOperationException(friendlyMessage);
             }
 
-            var incompleteMessage = TrySummarizeIncompleteResponse(
-                doc.RootElement,
-                failureContext,
-                out var hitOutputTokenLimit);
-            if (!string.IsNullOrWhiteSpace(incompleteMessage))
+            try
             {
-                var trimmedMessage = incompleteMessage.Trim();
+                using var doc = JsonDocument.Parse(responseBody);
+                var content = TryExtractPrimaryText(doc.RootElement);
 
-                if (hitOutputTokenLimit)
+                if (!string.IsNullOrWhiteSpace(content))
                 {
-                    if (_maxOutputTokens < DefaultMaxOutputTokens)
-                    {
-                        _maxOutputTokens = DefaultMaxOutputTokens;
-                        Preferences.Set(MaxTokensPreferenceKey, _maxOutputTokens);
-                        _logger.LogInformation(
-                            "Restored max output tokens preference to default {DefaultTokens} after incomplete {Context} response.",
-                            DefaultMaxOutputTokens,
-                            failureContext);
-
-                        return $"{trimmedMessage} The response limit has been reset to {DefaultMaxOutputTokens} tokens. Please try again.";
-                    }
-
-                    return $"{trimmedMessage} Please try again.";
+                    return content.Trim();
                 }
 
-                return trimmedMessage;
-            }
+                var incompleteMessage = TrySummarizeIncompleteResponse(
+                    doc.RootElement,
+                    failureContext,
+                    out var hitOutputTokenLimit);
 
-            throw new InvalidOperationException($"OpenAI response did not contain {failureContext} content.");
-        }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
-        {
-            _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
-            throw new OpenAiResponseParseException(failureContext, responseBody, ex);
+                if (!string.IsNullOrWhiteSpace(incompleteMessage))
+                {
+                    if (hitOutputTokenLimit)
+                    {
+                        var nextLimit = CalculateNextTokenLimit(attemptTokens);
+                        if (nextLimit > attemptTokens)
+                        {
+                            SetMaxOutputTokens(nextLimit);
+                            attemptTokens = _maxOutputTokens;
+                            _logger.LogInformation(
+                                "Retrying {Context} with increased max output tokens {Tokens} after truncated response.",
+                                failureContext,
+                                attemptTokens);
+                            continue;
+                        }
+
+                        return BuildMaxTokenLimitMessage(failureContext, attemptTokens);
+                    }
+
+                    return incompleteMessage.Trim();
+                }
+
+                throw new InvalidOperationException($"OpenAI response did not contain {failureContext} content.");
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+            {
+                _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
+                throw new OpenAiResponseParseException(failureContext, responseBody, ex);
+            }
         }
     }
 
@@ -454,6 +458,38 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         }
 
         return tokens;
+    }
+
+    private static int CalculateNextTokenLimit(int currentLimit)
+    {
+        if (currentLimit >= MaximumOutputTokens)
+        {
+            return currentLimit;
+        }
+
+        var increased = (int)Math.Ceiling(currentLimit * 1.5);
+        if (increased <= currentLimit)
+        {
+            increased = currentLimit + 200;
+        }
+
+        var minimumStep = currentLimit + 200;
+        if (increased < minimumStep)
+        {
+            increased = minimumStep;
+        }
+
+        return increased > MaximumOutputTokens ? MaximumOutputTokens : increased;
+    }
+
+    private static string BuildMaxTokenLimitMessage(string failureContext, int attemptedTokens)
+    {
+        if (attemptedTokens >= MaximumOutputTokens)
+        {
+            return $"OpenAI truncated the {failureContext} response even after retrying with the maximum {MaximumOutputTokens:N0}-token limit. Try shortening the facts or splitting the request.";
+        }
+
+        return $"OpenAI truncated the {failureContext} response after reaching the {attemptedTokens:N0}-token limit. Please try again.";
     }
 
     private string GetOrThrowApiKey()
@@ -720,7 +756,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         if (string.Equals(reason, "max_output_tokens", StringComparison.OrdinalIgnoreCase))
         {
             hitOutputTokenLimit = true;
-            return $"OpenAI truncated the {failureContext} response after reaching the maximum output token limit. Increase the Max AI response tokens setting and try again.";
+            return $"OpenAI truncated the {failureContext} response after reaching the maximum output token limit.";
         }
 
         if (!string.IsNullOrWhiteSpace(reason))

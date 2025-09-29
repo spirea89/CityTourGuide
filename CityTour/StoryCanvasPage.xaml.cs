@@ -161,6 +161,7 @@ public partial class StoryCanvasPage : ContentPage
             await ToggleLoadingAsync(true, userInitiated, categoryLabel, modelLabel);
 
             var addressForStory = GetAddressForStory();
+            var previousTokenLimit = _storyService.MaxOutputTokens;
             var storyResult = await _storyService.GenerateStoryAsync(
                 _buildingName,
                 addressForStory,
@@ -175,12 +176,23 @@ public partial class StoryCanvasPage : ContentPage
                 StoryEditor.Text = storyResult.Story;
                 PromptLabel.Text = storyResult.Prompt;
                 PromptInfoButton.IsEnabled = !string.IsNullOrWhiteSpace(storyResult.Prompt);
+                if (_storyService.MaxOutputTokens != previousTokenLimit)
+                {
+                    SyncMaxTokensFromService(clearErrors: true);
+                }
             });
 
             _lastFailedResponseBody = null;
             await UpdateParseResponseButtonAsync();
 
-            await SetStatusAsync($"Story generated with {modelLabel} ({categoryLabel} focus). Feel free to tweak or add your own notes.");
+            var statusMessage = $"Story generated with {modelLabel} ({categoryLabel} focus). Feel free to tweak or add your own notes.";
+            if (_storyService.MaxOutputTokens != previousTokenLimit)
+            {
+                var increasedText = _storyService.MaxOutputTokens.ToString("N0", CultureInfo.CurrentCulture);
+                statusMessage += $" Max AI response tokens automatically increased to {increasedText} to avoid truncated answers.";
+            }
+
+            await SetStatusAsync(statusMessage);
         }
         catch (OpenAiResponseParseException ex)
         {
@@ -411,13 +423,27 @@ public partial class StoryCanvasPage : ContentPage
 
     private void InitializeMaxTokenControls()
     {
+        SyncMaxTokensFromService(clearErrors: true);
+    }
+
+    private void SyncMaxTokensFromService(bool clearErrors)
+    {
         _isUpdatingMaxTokens = true;
 
         try
         {
-            MaxTokensEntry.Text = _storyService.MaxOutputTokens.ToString(CultureInfo.InvariantCulture);
-            MaxTokensErrorLabel.IsVisible = false;
-            MaxTokensErrorLabel.Text = string.Empty;
+            var tokensText = _storyService.MaxOutputTokens.ToString(CultureInfo.InvariantCulture);
+            if (!string.Equals(MaxTokensEntry.Text, tokensText, StringComparison.Ordinal))
+            {
+                MaxTokensEntry.Text = tokensText;
+            }
+
+            if (clearErrors)
+            {
+                MaxTokensErrorLabel.IsVisible = false;
+                MaxTokensErrorLabel.Text = string.Empty;
+            }
+
             UpdateMaxTokensInfoLabel();
         }
         finally
@@ -467,12 +493,7 @@ public partial class StoryCanvasPage : ContentPage
         }
 
         _storyService.SetMaxOutputTokens(parsed);
-        _isUpdatingMaxTokens = true;
-        MaxTokensEntry.Text = _storyService.MaxOutputTokens.ToString(CultureInfo.InvariantCulture);
-        _isUpdatingMaxTokens = false;
-        MaxTokensErrorLabel.IsVisible = false;
-        MaxTokensErrorLabel.Text = string.Empty;
-        UpdateMaxTokensInfoLabel();
+        SyncMaxTokensFromService(clearErrors: true);
     }
 
     private bool TryParseTokenInput(string text, out int value)
@@ -491,10 +512,7 @@ public partial class StoryCanvasPage : ContentPage
     {
         MaxTokensErrorLabel.Text = message;
         MaxTokensErrorLabel.IsVisible = true;
-        _isUpdatingMaxTokens = true;
-        MaxTokensEntry.Text = _storyService.MaxOutputTokens.ToString(CultureInfo.InvariantCulture);
-        _isUpdatingMaxTokens = false;
-        UpdateMaxTokensInfoLabel();
+        SyncMaxTokensFromService(clearErrors: false);
     }
 
     private void OnMaxTokensEntryTextChanged(object? sender, TextChangedEventArgs e)
@@ -888,6 +906,7 @@ public partial class StoryCanvasPage : ContentPage
             var address = GetAddressForStory();
             var storyText = string.IsNullOrWhiteSpace(StoryEditor.Text) ? null : StoryEditor.Text;
 
+            var previousTokenLimit = _storyService.MaxOutputTokens;
             var response = await _storyService.AskAddressDetailsAsync(
                 _buildingName,
                 address,
@@ -898,7 +917,19 @@ public partial class StoryCanvasPage : ContentPage
             cts.Token.ThrowIfCancellationRequested();
 
             await AddChatMessageAsync(new ChatMessage(response, isUser: false));
-            await SetChatBusyStateAsync(false, ChatFollowUpStatusMessage);
+            if (_storyService.MaxOutputTokens != previousTokenLimit)
+            {
+                await MainThread.InvokeOnMainThreadAsync(() => SyncMaxTokensFromService(clearErrors: true));
+            }
+
+            var followUpStatus = ChatFollowUpStatusMessage;
+            if (_storyService.MaxOutputTokens != previousTokenLimit)
+            {
+                var increasedText = _storyService.MaxOutputTokens.ToString("N0", CultureInfo.CurrentCulture);
+                followUpStatus += $" Max AI response tokens automatically increased to {increasedText}.";
+            }
+
+            await SetChatBusyStateAsync(false, followUpStatus);
         }
         catch (OperationCanceledException)
         {
