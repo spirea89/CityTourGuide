@@ -127,7 +127,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
                     overall_verdict = new
                     {
                         type = "string",
-                        enum = new[] { "aligned", "mixed", "issues", "insufficient_data" }
+                        @enum = new[] { "aligned", "mixed", "issues", "insufficient_data" }
                     },
                     summary = new { type = "string" },
                     confirmed_facts = new
