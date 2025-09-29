@@ -70,7 +70,8 @@
         </StackLayout>
 
         <StackLayout Grid.Row="4"
-                     Spacing="4">
+                     Spacing="4"
+                     IsVisible="False">
             <Label Text="AI model"
                    FontAttributes="Bold"
                    FontSize="14" />
@@ -81,7 +82,8 @@
         </StackLayout>
 
         <StackLayout Grid.Row="5"
-                     Spacing="4">
+                     Spacing="4"
+                     IsVisible="False">
             <Label Text="Max AI response tokens"
                    FontAttributes="Bold"
                    FontSize="14" />
@@ -133,7 +135,8 @@
         <Button x:Name="WikipediaButton"
                 Grid.Row="9"
                 Text="Fetch Wikipedia summary"
-                Clicked="OnFetchWikipediaClicked" />
+                Clicked="OnFetchWikipediaClicked"
+                IsVisible="False" />
 
         <Label Grid.Row="10"
                Text="Ask about this place"
