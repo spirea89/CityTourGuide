@@ -11,6 +11,9 @@ namespace CityTour.Services;
 public interface IAiStoryService
 {
     string CurrentModel { get; }
+    int MaxOutputTokens { get; }
+    int MinSupportedOutputTokens { get; }
+    int MaxSupportedOutputTokens { get; }
 
     Task<StoryGenerationResult> GenerateStoryAsync(
         string buildingName,
@@ -35,12 +38,17 @@ public interface IAiStoryService
         string? language = null);
 
     void SetModel(string model);
+    void SetMaxOutputTokens(int maxTokens);
 }
 
 public class AiStoryService : IAiStoryService
 {
     private const string DefaultModel = "gpt-5";
     private const string ModelPreferenceKey = "ai.story.model";
+    private const string MaxTokensPreferenceKey = "ai.story.max_tokens";
+    private const int DefaultMaxOutputTokens = 600;
+    private const int MinimumOutputTokens = 200;
+    private const int MaximumOutputTokens = 4096;
     private const string SystemMessage = """
 You are a creative yet trustworthy city tour guide. Base every response strictly on the verified facts supplied by the user. If the prompt says information is missing, acknowledge the gap instead of inventing details. Keep the tone welcoming and vivid while staying factual.
 """;
@@ -105,6 +113,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
     private readonly IApiKeyProvider _apiKeyProvider;
     private string _model;
     private string? _apiKey;
+    private int _maxOutputTokens;
 
     public AiStoryService(HttpClient httpClient, ILogger<AiStoryService> logger, IApiKeyProvider apiKeyProvider)
     {
@@ -114,9 +123,18 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         _apiKeyProvider = apiKeyProvider;
         var savedModel = Preferences.Get(ModelPreferenceKey, DefaultModel);
         _model = string.IsNullOrWhiteSpace(savedModel) ? DefaultModel : savedModel.Trim();
+        var savedMaxTokens = Preferences.Get(MaxTokensPreferenceKey, DefaultMaxOutputTokens);
+        _maxOutputTokens = ClampOutputTokens(savedMaxTokens);
+        if (_maxOutputTokens != savedMaxTokens)
+        {
+            Preferences.Set(MaxTokensPreferenceKey, _maxOutputTokens);
+        }
     }
 
     public string CurrentModel => _model;
+    public int MaxOutputTokens => _maxOutputTokens;
+    public int MinSupportedOutputTokens => MinimumOutputTokens;
+    public int MaxSupportedOutputTokens => MaximumOutputTokens;
 
     public void SetModel(string model)
     {
@@ -135,6 +153,18 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         Preferences.Set(ModelPreferenceKey, _model);
     }
 
+    public void SetMaxOutputTokens(int maxTokens)
+    {
+        var clamped = ClampOutputTokens(maxTokens);
+        if (_maxOutputTokens == clamped)
+        {
+            return;
+        }
+
+        _maxOutputTokens = clamped;
+        Preferences.Set(MaxTokensPreferenceKey, _maxOutputTokens);
+    }
+
     public async Task<StoryGenerationResult> GenerateStoryAsync(
         string buildingName,
         string? buildingAddress,
@@ -149,7 +179,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         }
 
         var prompt = BuildStoryPrompt(buildingName, buildingAddress, category, facts, language);
-        var story = await SendResponseAsync(prompt, 600, "story", cancellationToken);
+        var story = await SendResponseAsync(prompt, _maxOutputTokens, "story", cancellationToken);
 
         return new StoryGenerationResult(story, prompt);
     }
@@ -274,7 +304,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         }
 
         var prompt = BuildFollowUpPrompt(buildingName, buildingAddress, currentStory, question);
-        return await SendResponseAsync(prompt, 400, "follow-up answer", cancellationToken);
+        return await SendResponseAsync(prompt, _maxOutputTokens, "follow-up answer", cancellationToken);
     }
 
     private string BuildFollowUpPrompt(
@@ -387,6 +417,21 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
             _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
             throw new OpenAiResponseParseException(failureContext, responseBody, ex);
         }
+    }
+
+    private static int ClampOutputTokens(int tokens)
+    {
+        if (tokens < MinimumOutputTokens)
+        {
+            return MinimumOutputTokens;
+        }
+
+        if (tokens > MaximumOutputTokens)
+        {
+            return MaximumOutputTokens;
+        }
+
+        return tokens;
     }
 
     private string GetOrThrowApiKey()
