@@ -62,6 +62,7 @@ public partial class StoryCanvasPage : ContentPage
     private CancellationTokenSource? _wikipediaCts;
     private bool _isWikipediaBusy;
     private string? _lastFailedResponseBody;
+    private bool _isUpdatingMaxTokens;
 
     public StoryCanvasPage(
         string placeId,
@@ -90,6 +91,7 @@ public partial class StoryCanvasPage : ContentPage
 
         ConfigureCategoryPicker();
         ConfigureModelPicker();
+        InitializeMaxTokenControls();
 
         var addressForStory = string.IsNullOrWhiteSpace(_storyAddress)
             ? _displayAddress
@@ -405,6 +407,118 @@ public partial class StoryCanvasPage : ContentPage
         {
             _isInitializingModel = false;
         }
+    }
+
+    private void InitializeMaxTokenControls()
+    {
+        _isUpdatingMaxTokens = true;
+
+        try
+        {
+            MaxTokensEntry.Text = _storyService.MaxOutputTokens.ToString(CultureInfo.InvariantCulture);
+            MaxTokensErrorLabel.IsVisible = false;
+            MaxTokensErrorLabel.Text = string.Empty;
+            UpdateMaxTokensInfoLabel();
+        }
+        finally
+        {
+            _isUpdatingMaxTokens = false;
+        }
+    }
+
+    private void UpdateMaxTokensInfoLabel()
+    {
+        var min = _storyService.MinSupportedOutputTokens;
+        var max = _storyService.MaxSupportedOutputTokens;
+        var current = _storyService.MaxOutputTokens;
+        var minText = min.ToString("N0", CultureInfo.CurrentCulture);
+        var maxText = max.ToString("N0", CultureInfo.CurrentCulture);
+        var currentText = current.ToString("N0", CultureInfo.CurrentCulture);
+        MaxTokensInfoLabel.Text = $"Using up to {currentText} tokens per AI response (range {minText}–{maxText}).";
+    }
+
+    private void ApplyMaxTokensFromEntry()
+    {
+        if (_isUpdatingMaxTokens)
+        {
+            return;
+        }
+
+        var rawText = MaxTokensEntry.Text?.Trim();
+        var min = _storyService.MinSupportedOutputTokens;
+        var max = _storyService.MaxSupportedOutputTokens;
+
+        if (string.IsNullOrWhiteSpace(rawText))
+        {
+            ShowMaxTokenValidationError($"Enter a value between {min} and {max}.");
+            return;
+        }
+
+        if (!TryParseTokenInput(rawText, out var parsed))
+        {
+            ShowMaxTokenValidationError($"Enter a value between {min} and {max}.");
+            return;
+        }
+
+        if (parsed < min || parsed > max)
+        {
+            ShowMaxTokenValidationError($"Enter a value between {min} and {max}.");
+            return;
+        }
+
+        _storyService.SetMaxOutputTokens(parsed);
+        _isUpdatingMaxTokens = true;
+        MaxTokensEntry.Text = _storyService.MaxOutputTokens.ToString(CultureInfo.InvariantCulture);
+        _isUpdatingMaxTokens = false;
+        MaxTokensErrorLabel.IsVisible = false;
+        MaxTokensErrorLabel.Text = string.Empty;
+        UpdateMaxTokensInfoLabel();
+    }
+
+    private bool TryParseTokenInput(string text, out int value)
+    {
+        const NumberStyles styles = NumberStyles.Integer | NumberStyles.AllowThousands;
+
+        if (int.TryParse(text, styles, CultureInfo.InvariantCulture, out value))
+        {
+            return true;
+        }
+
+        return int.TryParse(text, styles, CultureInfo.CurrentCulture, out value);
+    }
+
+    private void ShowMaxTokenValidationError(string message)
+    {
+        MaxTokensErrorLabel.Text = message;
+        MaxTokensErrorLabel.IsVisible = true;
+        _isUpdatingMaxTokens = true;
+        MaxTokensEntry.Text = _storyService.MaxOutputTokens.ToString(CultureInfo.InvariantCulture);
+        _isUpdatingMaxTokens = false;
+        UpdateMaxTokensInfoLabel();
+    }
+
+    private void OnMaxTokensEntryTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isUpdatingMaxTokens)
+        {
+            return;
+        }
+
+        if (MaxTokensErrorLabel.IsVisible)
+        {
+            MaxTokensErrorLabel.IsVisible = false;
+            MaxTokensErrorLabel.Text = string.Empty;
+        }
+    }
+
+    private void OnMaxTokensEntryCompleted(object? sender, EventArgs e)
+    {
+        ApplyMaxTokensFromEntry();
+    }
+
+    private void OnMaxTokensEntryUnfocused(object? sender, FocusEventArgs e)
+    {
+        ApplyMaxTokensFromEntry();
     }
 
     private void ConfigureCategoryPicker()
