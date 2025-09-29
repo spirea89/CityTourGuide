@@ -5,6 +5,7 @@ using System.Globalization;
 using CityTour.Models;
 using CityTour.Services;
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.ApplicationModel.DataTransfer;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Media;
 using System.Linq;
@@ -60,6 +61,7 @@ public partial class StoryCanvasPage : ContentPage
     private const string ChatFollowUpStatusMessage = "Ask another follow-up question whenever you're curious.";
     private CancellationTokenSource? _wikipediaCts;
     private bool _isWikipediaBusy;
+    private string? _lastFailedResponseBody;
 
     public StoryCanvasPage(
         string placeId,
@@ -149,6 +151,9 @@ public partial class StoryCanvasPage : ContentPage
         var categoryLabel = GetCategoryDisplayName(category);
         var modelLabel = GetSelectedModelLabel();
 
+        _lastFailedResponseBody = null;
+        await UpdateParseResponseButtonAsync();
+
         try
         {
             await ToggleLoadingAsync(true, userInitiated, categoryLabel, modelLabel);
@@ -170,7 +175,22 @@ public partial class StoryCanvasPage : ContentPage
                 PromptInfoButton.IsEnabled = !string.IsNullOrWhiteSpace(storyResult.Prompt);
             });
 
+            _lastFailedResponseBody = null;
+            await UpdateParseResponseButtonAsync();
+
             await SetStatusAsync($"Story generated with {modelLabel} ({categoryLabel} focus). Feel free to tweak or add your own notes.");
+        }
+        catch (OpenAiResponseParseException ex)
+        {
+            _lastFailedResponseBody = ex.ResponseBody;
+            await UpdateParseResponseButtonAsync();
+
+            await SetStatusAsync($"Could not generate story. {ex.Message}");
+
+            if (userInitiated)
+            {
+                await DisplayAlert("Story generation failed", ex.Message, "OK");
+            }
         }
         catch (OperationCanceledException)
         {
@@ -178,6 +198,9 @@ public partial class StoryCanvasPage : ContentPage
         }
         catch (Exception ex)
         {
+            _lastFailedResponseBody = null;
+            await UpdateParseResponseButtonAsync();
+
             await SetStatusAsync($"Could not generate story. {ex.Message}");
 
             if (userInitiated)
@@ -189,6 +212,75 @@ public partial class StoryCanvasPage : ContentPage
         {
             await ToggleLoadingAsync(false, userInitiated, categoryLabel, modelLabel);
         }
+    }
+
+    private Task UpdateParseResponseButtonAsync()
+    {
+        return MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            ShowParseResponseButton.IsVisible = !string.IsNullOrWhiteSpace(_lastFailedResponseBody);
+        });
+    }
+
+    private async void OnShowParseResponseClicked(object sender, EventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_lastFailedResponseBody))
+        {
+            await DisplayAlert("No response available", "There is no raw OpenAI response to display.", "OK");
+            return;
+        }
+
+        var responseText = _lastFailedResponseBody;
+
+        var editor = new Editor
+        {
+            Text = responseText,
+            IsReadOnly = true,
+            AutoSize = EditorAutoSizeOption.Disabled,
+            HeightRequest = 320,
+            HorizontalOptions = LayoutOptions.Fill,
+            VerticalOptions = LayoutOptions.FillAndExpand
+        };
+
+        var copyButton = new Button
+        {
+            Text = "Copy to clipboard",
+            HorizontalOptions = LayoutOptions.End
+        };
+
+        var responsePage = new ContentPage
+        {
+            Title = "OpenAI response",
+            Content = new VerticalStackLayout
+            {
+                Padding = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new Label
+                    {
+                        Text = "Raw response from OpenAI (copy it below):",
+                        FontAttributes = FontAttributes.Bold,
+                        FontSize = 16
+                    },
+                    editor,
+                    copyButton
+                }
+            }
+        };
+
+        copyButton.Clicked += async (_, _) =>
+        {
+            await Clipboard.SetTextAsync(responseText);
+            await responsePage.DisplayAlert("Copied", "The OpenAI response has been copied to your clipboard.", "OK");
+        };
+
+        responsePage.ToolbarItems.Add(new ToolbarItem("Close", null, async () =>
+        {
+            await responsePage.Navigation.PopModalAsync();
+        }));
+
+        await Navigation.PushModalAsync(new NavigationPage(responsePage));
     }
 
     private Task ToggleLoadingAsync(bool isLoading, bool userInitiated, string categoryLabel, string modelLabel)
