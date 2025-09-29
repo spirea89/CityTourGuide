@@ -369,12 +369,18 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
             using var doc = JsonDocument.Parse(responseBody);
             var content = TryExtractPrimaryText(doc.RootElement);
 
-            if (string.IsNullOrWhiteSpace(content))
+            if (!string.IsNullOrWhiteSpace(content))
             {
-                throw new InvalidOperationException($"OpenAI response did not contain {failureContext} content.");
+                return content.Trim();
             }
 
-            return content.Trim();
+            var incompleteMessage = TrySummarizeIncompleteResponse(doc.RootElement, failureContext);
+            if (!string.IsNullOrWhiteSpace(incompleteMessage))
+            {
+                return incompleteMessage.Trim();
+            }
+
+            throw new InvalidOperationException($"OpenAI response did not contain {failureContext} content.");
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
@@ -607,6 +613,49 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
             default:
                 return null;
         }
+    }
+
+    private static string? TrySummarizeIncompleteResponse(JsonElement root, string failureContext)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (!root.TryGetProperty("status", out var statusElement))
+        {
+            return null;
+        }
+
+        var status = statusElement.ValueKind == JsonValueKind.String ? statusElement.GetString() : null;
+        if (!string.Equals(status, "incomplete", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        string? reason = null;
+
+        if (root.TryGetProperty("incomplete_details", out var detailsElement)
+            && detailsElement.ValueKind == JsonValueKind.Object)
+        {
+            if (detailsElement.TryGetProperty("reason", out var reasonElement)
+                && reasonElement.ValueKind == JsonValueKind.String)
+            {
+                reason = reasonElement.GetString();
+            }
+        }
+
+        if (string.Equals(reason, "max_output_tokens", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"The {failureContext} response from OpenAI was cut off because it reached the maximum output token limit. Please try again.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            return $"The {failureContext} response from OpenAI was marked incomplete ({reason}). Please try again.";
+        }
+
+        return $"OpenAI returned an incomplete {failureContext} response. Please try again.";
     }
 
     private static string? TryExtractErrorMessage(string responseBody)
