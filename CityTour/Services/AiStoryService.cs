@@ -293,26 +293,225 @@ public class AiStoryService : IAiStoryService
         try
         {
             using var doc = JsonDocument.Parse(responseBody);
-            var content = doc.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
+            var root = doc.RootElement;
 
-            if (string.IsNullOrWhiteSpace(content))
+            var content = TryExtractCompletionContent(root);
+            if (!string.IsNullOrWhiteSpace(content))
             {
-                throw new InvalidOperationException($"OpenAI response did not contain {failureContext} content.");
+                return content.Trim();
             }
 
-            return content.Trim();
+            if (TryBuildIncompleteResponseMessage(root, failureContext, out var friendlyMessage))
+            {
+                _logger.LogWarning("OpenAI returned incomplete {Context} response: {Message}", failureContext, friendlyMessage);
+                var exception = new InvalidOperationException(friendlyMessage);
+                exception.Data[RawResponseDataKey] = responseBody;
+                throw exception;
+            }
+
+            _logger.LogError("OpenAI response did not contain {Context} content: {Body}", failureContext, responseBody);
+            var missingContentException = new InvalidOperationException($"OpenAI response did not contain {failureContext} content.");
+            missingContentException.Data[RawResponseDataKey] = responseBody;
+            throw missingContentException;
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        catch (JsonException ex)
         {
             _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
             var parseException = new InvalidOperationException($"Failed to parse the {failureContext} response from OpenAI.", ex);
             parseException.Data[RawResponseDataKey] = responseBody;
             throw parseException;
         }
+    }
+
+    private static bool TryBuildIncompleteResponseMessage(JsonElement root, string failureContext, out string message)
+    {
+        message = string.Empty;
+
+        if (root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty("status", out var status)
+            && status.ValueKind == JsonValueKind.String
+            && string.Equals(status.GetString(), "incomplete", StringComparison.OrdinalIgnoreCase))
+        {
+            string? reason = null;
+            if (root.TryGetProperty("incomplete_details", out var details)
+                && details.ValueKind == JsonValueKind.Object
+                && details.TryGetProperty("reason", out var reasonElement)
+                && reasonElement.ValueKind == JsonValueKind.String)
+            {
+                reason = reasonElement.GetString();
+            }
+
+            message = string.IsNullOrWhiteSpace(reason)
+                ? $"OpenAI stopped generating the {failureContext} before it was finished. Try again or adjust your request."
+                : $"OpenAI stopped generating the {failureContext} early ({reason}). Try again or adjust your request.";
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string? TryExtractCompletionContent(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var choice in choices.EnumerateArray())
+            {
+                var text = TryExtractTextFromChoice(choice);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+        }
+
+        if (root.TryGetProperty("output", out var output) && output.ValueKind == JsonValueKind.Array)
+        {
+            var text = ExtractTextFromElement(output);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        if (root.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object)
+        {
+            var text = ExtractTextFromElement(message);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        if (root.TryGetProperty("content", out var contentElement))
+        {
+            var text = ExtractTextFromElement(contentElement);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryExtractTextFromChoice(JsonElement choice)
+    {
+        if (choice.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (choice.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object)
+        {
+            var messageText = ExtractTextFromElement(message);
+            if (!string.IsNullOrWhiteSpace(messageText))
+            {
+                return messageText;
+            }
+        }
+
+        if (choice.TryGetProperty("text", out var textElement))
+        {
+            return textElement.ValueKind == JsonValueKind.String ? textElement.GetString() : ExtractTextFromElement(textElement);
+        }
+
+        if (choice.TryGetProperty("content", out var contentElement))
+        {
+            var text = ExtractTextFromElement(contentElement);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractTextFromElement(JsonElement element)
+    {
+        var builder = new StringBuilder();
+        AppendTextFromElement(element, builder);
+        return builder.Length > 0 ? builder.ToString() : null;
+    }
+
+    private static void AppendTextFromElement(JsonElement element, StringBuilder builder)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                AppendText(builder, element.GetString());
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    AppendTextFromElement(item, builder);
+                }
+
+                break;
+            case JsonValueKind.Object:
+                if (element.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String)
+                {
+                    var type = typeElement.GetString();
+                    if (string.Equals(type, "reasoning", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (element.TryGetProperty("summary", out var summary))
+                        {
+                            AppendTextFromElement(summary, builder);
+                        }
+
+                        break;
+                    }
+
+                    if (string.Equals(type, "output_text", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(type, "text", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (element.TryGetProperty("text", out var typedText) && typedText.ValueKind == JsonValueKind.String)
+                        {
+                            AppendText(builder, typedText.GetString());
+                        }
+
+                        break;
+                    }
+                }
+
+                if (element.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+                {
+                    AppendText(builder, text.GetString());
+                }
+
+                if (element.TryGetProperty("content", out var content))
+                {
+                    AppendTextFromElement(content, builder);
+                }
+
+                if (element.TryGetProperty("value", out var value))
+                {
+                    AppendTextFromElement(value, builder);
+                }
+
+                break;
+        }
+    }
+
+    private static void AppendText(StringBuilder builder, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        if (builder.Length > 0)
+        {
+            builder.AppendLine().AppendLine();
+        }
+
+        builder.Append(text.Trim());
     }
 
     private static bool RequiresMaxCompletionTokens(string model)
