@@ -39,7 +39,7 @@ public interface IAiStoryService
 
 public class AiStoryService : IAiStoryService
 {
-    private const string DefaultModel = "gpt-4o-mini";
+    private const string DefaultModel = "gpt-5";
     private const string ModelPreferenceKey = "ai.story.model";
     private const string SystemMessage = "You are a creative, historically knowledgeable city tour guide. Craft short stories and responses about buildings that feel authentic, welcoming, and vivid.";
     private const string HistoryPromptTemplate = "You are a meticulous local historian. Using only facts about {address}, write a vivid, chronological ~120–150 word history highlighting founding date, name changes, 2–3 pivotal events, and significance.";
