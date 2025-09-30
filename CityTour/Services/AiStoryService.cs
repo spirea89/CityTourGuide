@@ -33,6 +33,13 @@ namespace CityTour.Services
         string question,
         CancellationToken cancellationToken = default);
 
+    Task<(string RawResponse, StoryFactCheckResult Result)> VerifyStoryFactsWithRawAsync(
+        string buildingName,
+        string? buildingAddress,
+        string story,
+        string? facts = null,
+        CancellationToken cancellationToken = default);
+
     Task<StoryFactCheckResult> VerifyStoryFactsAsync(
         string buildingName,
         string? buildingAddress,
@@ -232,7 +239,7 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         return new StoryGenerationResult(story, prompt);
     }
 
-    public async Task<StoryFactCheckResult> VerifyStoryFactsAsync(
+    public async Task<(string RawResponse, StoryFactCheckResult Result)> VerifyStoryFactsWithRawAsync(
         string buildingName,
         string? buildingAddress,
         string story,
@@ -262,7 +269,25 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
             throw new InvalidOperationException("OpenAI did not return fact-check results.");
         }
 
-        return ParseFactCheckResult(response);
+        var parsed = ParseFactCheckResult(response);
+        return (response, parsed);
+    }
+
+    public async Task<StoryFactCheckResult> VerifyStoryFactsAsync(
+        string buildingName,
+        string? buildingAddress,
+        string story,
+        string? facts = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await VerifyStoryFactsWithRawAsync(
+            buildingName,
+            buildingAddress,
+            story,
+            facts,
+            cancellationToken);
+
+        return result.Result;
     }
 
     public string BuildStoryPrompt(
