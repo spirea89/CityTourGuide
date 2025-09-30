@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using CityTour.Models;
 using Microsoft.Maui.Storage;
 using Microsoft.Extensions.Logging;
@@ -243,21 +244,29 @@ public class AiStoryService : IAiStoryService
     {
         var key = GetOrThrowApiKey();
 
-        var payload = new
+        var payload = new JsonObject
         {
-            model = _model,
-            messages = new object[]
+            ["model"] = _model,
+            ["messages"] = new JsonArray
             {
-                new { role = "system", content = SystemMessage },
-                new { role = "user", content = prompt }
+                new JsonObject { ["role"] = "system", ["content"] = SystemMessage },
+                new JsonObject { ["role"] = "user", ["content"] = prompt }
             },
-            temperature,
-            max_tokens = maxTokens
+            ["temperature"] = temperature
         };
+
+        if (RequiresMaxCompletionTokens(_model))
+        {
+            payload["max_completion_tokens"] = maxTokens;
+        }
+        else
+        {
+            payload["max_tokens"] = maxTokens;
+        }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        request.Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         var responseBody = await response.Content.ReadAsStringAsync();
@@ -294,6 +303,11 @@ public class AiStoryService : IAiStoryService
             _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
             throw new InvalidOperationException($"Failed to parse the {failureContext} response from OpenAI.", ex);
         }
+    }
+
+    private static bool RequiresMaxCompletionTokens(string model)
+    {
+        return model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
     }
 
     private string GetOrThrowApiKey()
