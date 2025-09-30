@@ -5,46 +5,43 @@ using System.Globalization;
 using CityTour.Models;
 using CityTour.Services;
 using Microsoft.Maui.ApplicationModel;
-using Microsoft.Maui.ApplicationModel.DataTransfer;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Media;
 using System.Linq;
 using System.Reflection;
-using System.Text;
 
-namespace CityTour
+namespace CityTour;
+
+public partial class StoryCanvasPage : ContentPage
 {
-    public partial class StoryCanvasPage : ContentPage
-    {
     private readonly string _placeId;
     private readonly string _buildingName;
     private readonly string? _displayAddress;
     private readonly string? _storyAddress;
     private readonly IAiStoryService _storyService;
+    private readonly IApiKeyProvider _apiKeys;
     private readonly double? _latitude;
     private readonly double? _longitude;
-    private string? _buildingFacts;
+    private readonly string? _buildingFacts;
     private readonly string _preferredLanguage;
-    private readonly IWikipediaService _wikipediaService;
     private CancellationTokenSource? _generationCts;
     private bool _hasTriggeredInitialGeneration;
     private bool _isInitializingCategory;
     private StoryCategory _selectedCategory;
-    private readonly List<StoryCategoryOption> _categoryOptions = new List<StoryCategoryOption>
+    private readonly List<StoryCategoryOption> _categoryOptions = new()
     {
-        new StoryCategoryOption("History", StoryCategory.History),
-        new StoryCategoryOption("Personalities", StoryCategory.Personalities),
-        new StoryCategoryOption("Architecture", StoryCategory.Architecture),
-        new StoryCategoryOption("Today", StoryCategory.Today),
-        new StoryCategoryOption("Kids", StoryCategory.Kids)
+        new("History", StoryCategory.History),
+        new("Personalities", StoryCategory.Personalities),
+        new("Architecture", StoryCategory.Architecture),
+        new("Today", StoryCategory.Today),
+        new("Kids", StoryCategory.Kids)
     };
-    private readonly List<ModelOption> _modelOptions = new List<ModelOption>
+    private readonly List<ModelOption> _modelOptions = new()
     {
-        new ModelOption("GPT-5", "gpt-5", "Latest flagship reasoning"),
-        new ModelOption("GPT-4.1", "gpt-4.1", "Previous generation high quality"),
-        new ModelOption("GPT-4.1 mini", "gpt-4.1-mini", "Smarter reasoning, moderate speed"),
-        new ModelOption("GPT-4o", "gpt-4o", "Balanced quality and cost"),
-        new ModelOption("GPT-4o mini", "gpt-4o-mini", "Fast and cost-efficient")
+        new("GPT-4o mini", "gpt-4o-mini", "Fast and cost-efficient"),
+        new("GPT-4o", "gpt-4o", "Balanced quality and cost"),
+        new("GPT-4.1 mini", "gpt-4.1-mini", "Smarter reasoning, moderate speed"),
+        new("GPT-4.1", "gpt-4.1", "Highest quality responses")
     };
     private ModelOption? _selectedModel;
     private bool _isInitializingModel;
@@ -52,19 +49,13 @@ namespace CityTour
     private bool _isSpeaking;
     private bool _isLoadingVoices;
     private bool _hasAttemptedVoiceLoad;
-    private List<LocaleOption> _voiceOptions = new List<LocaleOption>();
-    private readonly ObservableCollection<ChatMessage> _chatMessages = new ObservableCollection<ChatMessage>();
+    private List<LocaleOption> _voiceOptions = new();
+    private readonly ObservableCollection<ChatMessage> _chatMessages = new();
     private CancellationTokenSource? _chatCts;
     private bool _isChatBusy;
     private const string ChatReadyStatusMessage = "Ask the guide for more details about this address.";
     private const string ChatBusyStatusMessage = "Asking the tour guide…";
     private const string ChatFollowUpStatusMessage = "Ask another follow-up question whenever you're curious.";
-    private CancellationTokenSource? _wikipediaCts;
-    private bool _isWikipediaBusy;
-    private string? _lastFailedResponseBody;
-    private bool _isUpdatingMaxTokens;
-    private CancellationTokenSource? _factCheckCts;
-    private bool _isFactChecking;
 
     public StoryCanvasPage(
         string placeId,
@@ -73,19 +64,17 @@ namespace CityTour
         string? storyAddress,
         string? buildingFacts,
         IAiStoryService storyService,
-        IWikipediaService wikipediaService,
+        IApiKeyProvider apiKeyProvider,
         double? latitude = null,
         double? longitude = null)
     {
         InitializeComponent();
-        ArgumentNullException.ThrowIfNull(storyService);
-        ArgumentNullException.ThrowIfNull(wikipediaService);
         _placeId = placeId;
         _buildingName = buildingName;
         _displayAddress = string.IsNullOrWhiteSpace(displayAddress) ? null : displayAddress;
         _storyAddress = string.IsNullOrWhiteSpace(storyAddress) ? null : storyAddress;
         _storyService = storyService;
-        _wikipediaService = wikipediaService;
+        _apiKeys = apiKeyProvider;
         _latitude = latitude;
         _longitude = longitude;
         _buildingFacts = string.IsNullOrWhiteSpace(buildingFacts) ? null : buildingFacts.Trim();
@@ -93,7 +82,6 @@ namespace CityTour
 
         ConfigureCategoryPicker();
         ConfigureModelPicker();
-        InitializeMaxTokenControls();
 
         var addressForStory = string.IsNullOrWhiteSpace(_storyAddress)
             ? _displayAddress
@@ -116,8 +104,6 @@ namespace CityTour
         StoryEditor.TextChanged += OnStoryTextChanged;
         UpdateAudioControls();
         UpdateChatControls();
-        UpdateWikipediaControls();
-        UpdateFactCheckControls();
     }
 
     protected override void OnAppearing()
@@ -139,12 +125,6 @@ namespace CityTour
         _generationCts?.Cancel();
         CancelSpeech();
         _chatCts?.Cancel();
-        _wikipediaCts?.Cancel();
-        _wikipediaCts?.Dispose();
-        _wikipediaCts = null;
-        _factCheckCts?.Cancel();
-        _factCheckCts?.Dispose();
-        _factCheckCts = null;
     }
 
     private async Task GenerateStoryAsync(bool userInitiated = false)
@@ -159,15 +139,11 @@ namespace CityTour
         var categoryLabel = GetCategoryDisplayName(category);
         var modelLabel = GetSelectedModelLabel();
 
-        _lastFailedResponseBody = null;
-        await UpdateParseResponseButtonAsync();
-
         try
         {
             await ToggleLoadingAsync(true, userInitiated, categoryLabel, modelLabel);
 
             var addressForStory = GetAddressForStory();
-            var previousTokenLimit = _storyService.MaxOutputTokens;
             var storyResult = await _storyService.GenerateStoryAsync(
                 _buildingName,
                 addressForStory,
@@ -181,38 +157,9 @@ namespace CityTour
             {
                 StoryEditor.Text = storyResult.Story;
                 PromptLabel.Text = storyResult.Prompt;
-                PromptInfoButton.IsEnabled = !string.IsNullOrWhiteSpace(storyResult.Prompt);
-                if (_storyService.MaxOutputTokens != previousTokenLimit)
-                {
-                    SyncMaxTokensFromService(clearErrors: true);
-                }
-                ResetFactCheckResults();
-                UpdateFactCheckControls();
             });
 
-            _lastFailedResponseBody = null;
-            await UpdateParseResponseButtonAsync();
-
-            var statusMessage = $"Story generated with {modelLabel} ({categoryLabel} focus). Feel free to tweak or add your own notes.";
-            if (_storyService.MaxOutputTokens != previousTokenLimit)
-            {
-                var increasedText = _storyService.MaxOutputTokens.ToString("N0", CultureInfo.CurrentCulture);
-                statusMessage += $" Max AI response tokens automatically increased to {increasedText} to avoid truncated answers.";
-            }
-
-            await SetStatusAsync(statusMessage);
-        }
-        catch (OpenAiResponseParseException ex)
-        {
-            _lastFailedResponseBody = ex.ResponseBody;
-            await UpdateParseResponseButtonAsync();
-
-            await SetStatusAsync($"Could not generate story. {ex.Message}");
-
-            if (userInitiated)
-            {
-                await DisplayAlert("Story generation failed", ex.Message, "OK");
-            }
+            await SetStatusAsync($"Story generated with {modelLabel} ({categoryLabel} focus). Feel free to tweak or add your own notes.");
         }
         catch (OperationCanceledException)
         {
@@ -220,9 +167,6 @@ namespace CityTour
         }
         catch (Exception ex)
         {
-            _lastFailedResponseBody = null;
-            await UpdateParseResponseButtonAsync();
-
             await SetStatusAsync($"Could not generate story. {ex.Message}");
 
             if (userInitiated)
@@ -234,75 +178,6 @@ namespace CityTour
         {
             await ToggleLoadingAsync(false, userInitiated, categoryLabel, modelLabel);
         }
-    }
-
-    private Task UpdateParseResponseButtonAsync()
-    {
-        return MainThread.InvokeOnMainThreadAsync(() =>
-        {
-            ShowParseResponseButton.IsVisible = !string.IsNullOrWhiteSpace(_lastFailedResponseBody);
-        });
-    }
-
-    private async void OnShowParseResponseClicked(object sender, EventArgs e)
-    {
-        if (string.IsNullOrWhiteSpace(_lastFailedResponseBody))
-        {
-            await DisplayAlert("No response available", "There is no raw OpenAI response to display.", "OK");
-            return;
-        }
-
-        var responseText = _lastFailedResponseBody;
-
-        var editor = new Editor
-        {
-            Text = responseText,
-            IsReadOnly = true,
-            AutoSize = EditorAutoSizeOption.Disabled,
-            HeightRequest = 320,
-            HorizontalOptions = LayoutOptions.Fill,
-            VerticalOptions = LayoutOptions.FillAndExpand
-        };
-
-        var copyButton = new Button
-        {
-            Text = "Copy to clipboard",
-            HorizontalOptions = LayoutOptions.End
-        };
-
-        var responsePage = new ContentPage
-        {
-            Title = "OpenAI response",
-            Content = new VerticalStackLayout
-            {
-                Padding = new Thickness(16),
-                Spacing = 12,
-                Children =
-                {
-                    new Label
-                    {
-                        Text = "Raw response from OpenAI (copy it below):",
-                        FontAttributes = FontAttributes.Bold,
-                        FontSize = 16
-                    },
-                    editor,
-                    copyButton
-                }
-            }
-        };
-
-        copyButton.Clicked += async (_, _) =>
-        {
-            await Clipboard.SetTextAsync(responseText);
-            await responsePage.DisplayAlert("Copied", "The OpenAI response has been copied to your clipboard.", "OK");
-        };
-
-        responsePage.ToolbarItems.Add(new ToolbarItem("Close", null, async () =>
-        {
-            await responsePage.Navigation.PopModalAsync();
-        }));
-
-        await Navigation.PushModalAsync(new NavigationPage(responsePage));
     }
 
     private Task ToggleLoadingAsync(bool isLoading, bool userInitiated, string categoryLabel, string modelLabel)
@@ -338,9 +213,6 @@ namespace CityTour
         _generationCts?.Cancel();
         CancelSpeech();
         _chatCts?.Cancel();
-        _wikipediaCts?.Cancel();
-        _wikipediaCts?.Dispose();
-        _wikipediaCts = null;
         await Navigation.PopModalAsync();
     }
 
@@ -427,124 +299,6 @@ namespace CityTour
         {
             _isInitializingModel = false;
         }
-    }
-
-    private void InitializeMaxTokenControls()
-    {
-        SyncMaxTokensFromService(clearErrors: true);
-    }
-
-    private void SyncMaxTokensFromService(bool clearErrors)
-    {
-        _isUpdatingMaxTokens = true;
-
-        try
-        {
-            var tokensText = _storyService.MaxOutputTokens.ToString(CultureInfo.InvariantCulture);
-            if (!string.Equals(MaxTokensEntry.Text, tokensText, StringComparison.Ordinal))
-            {
-                MaxTokensEntry.Text = tokensText;
-            }
-
-            if (clearErrors)
-            {
-                MaxTokensErrorLabel.IsVisible = false;
-                MaxTokensErrorLabel.Text = string.Empty;
-            }
-
-            UpdateMaxTokensInfoLabel();
-        }
-        finally
-        {
-            _isUpdatingMaxTokens = false;
-        }
-    }
-
-    private void UpdateMaxTokensInfoLabel()
-    {
-        var min = _storyService.MinSupportedOutputTokens;
-        var max = _storyService.MaxSupportedOutputTokens;
-        var current = _storyService.MaxOutputTokens;
-        var minText = min.ToString("N0", CultureInfo.CurrentCulture);
-        var maxText = max.ToString("N0", CultureInfo.CurrentCulture);
-        var currentText = current.ToString("N0", CultureInfo.CurrentCulture);
-        MaxTokensInfoLabel.Text = $"Using up to {currentText} tokens per AI response (range {minText}–{maxText}).";
-    }
-
-    private void ApplyMaxTokensFromEntry()
-    {
-        if (_isUpdatingMaxTokens)
-        {
-            return;
-        }
-
-        var rawText = MaxTokensEntry.Text?.Trim();
-        var min = _storyService.MinSupportedOutputTokens;
-        var max = _storyService.MaxSupportedOutputTokens;
-
-        if (string.IsNullOrWhiteSpace(rawText))
-        {
-            ShowMaxTokenValidationError($"Enter a value between {min} and {max}.");
-            return;
-        }
-
-        if (!TryParseTokenInput(rawText, out var parsed))
-        {
-            ShowMaxTokenValidationError($"Enter a value between {min} and {max}.");
-            return;
-        }
-
-        if (parsed < min || parsed > max)
-        {
-            ShowMaxTokenValidationError($"Enter a value between {min} and {max}.");
-            return;
-        }
-
-        _storyService.SetMaxOutputTokens(parsed);
-        SyncMaxTokensFromService(clearErrors: true);
-    }
-
-    private bool TryParseTokenInput(string text, out int value)
-    {
-        const NumberStyles styles = NumberStyles.Integer | NumberStyles.AllowThousands;
-
-        if (int.TryParse(text, styles, CultureInfo.InvariantCulture, out value))
-        {
-            return true;
-        }
-
-        return int.TryParse(text, styles, CultureInfo.CurrentCulture, out value);
-    }
-
-    private void ShowMaxTokenValidationError(string message)
-    {
-        MaxTokensErrorLabel.Text = message;
-        MaxTokensErrorLabel.IsVisible = true;
-        SyncMaxTokensFromService(clearErrors: false);
-    }
-
-    private void OnMaxTokensEntryTextChanged(object? sender, TextChangedEventArgs e)
-    {
-        if (_isUpdatingMaxTokens)
-        {
-            return;
-        }
-
-        if (MaxTokensErrorLabel.IsVisible)
-        {
-            MaxTokensErrorLabel.IsVisible = false;
-            MaxTokensErrorLabel.Text = string.Empty;
-        }
-    }
-
-    private void OnMaxTokensEntryCompleted(object? sender, EventArgs e)
-    {
-        ApplyMaxTokensFromEntry();
-    }
-
-    private void OnMaxTokensEntryUnfocused(object? sender, FocusEventArgs e)
-    {
-        ApplyMaxTokensFromEntry();
     }
 
     private void ConfigureCategoryPicker()
@@ -680,398 +434,6 @@ namespace CityTour
             _buildingFacts,
             _preferredLanguage);
         PromptLabel.Text = prompt;
-        PromptInfoButton.IsEnabled = !string.IsNullOrWhiteSpace(prompt);
-    }
-
-    private void UpdateWikipediaControls()
-    {
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            WikipediaButton.IsEnabled = !_isWikipediaBusy;
-        });
-    }
-
-    private void UpdateFactCheckControls()
-    {
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            var hasStory = !string.IsNullOrWhiteSpace(StoryEditor.Text);
-            FactCheckButton.IsEnabled = hasStory && !_isFactChecking;
-        });
-    }
-
-    private async void OnFetchWikipediaClicked(object? sender, EventArgs e)
-    {
-        if (_isWikipediaBusy)
-        {
-            return;
-        }
-
-        var addressHint = GetAddressForStory() ?? _displayAddress ?? _storyAddress;
-        var buildingQueryName = string.IsNullOrWhiteSpace(_buildingName) ? addressHint : _buildingName;
-
-        if (string.IsNullOrWhiteSpace(buildingQueryName) && string.IsNullOrWhiteSpace(addressHint))
-        {
-            await DisplayAlert("Wikipedia integration", "A building name or address is required before contacting Wikipedia.", "OK");
-            return;
-        }
-
-        _isWikipediaBusy = true;
-        UpdateWikipediaControls();
-
-        var cts = new CancellationTokenSource();
-        _wikipediaCts?.Cancel();
-        _wikipediaCts?.Dispose();
-        _wikipediaCts = cts;
-
-        try
-        {
-            await SetStatusAsync("Contacting Wikipedia for this place…");
-
-            var summary = await _wikipediaService.FetchSummaryAsync(
-                buildingQueryName ?? string.Empty,
-                addressHint,
-                _latitude,
-                _longitude,
-                cts.Token);
-
-            cts.Token.ThrowIfCancellationRequested();
-
-            if (summary is null)
-            {
-                const string message = "Wikipedia did not return any information for this place.";
-                await AppendWikipediaMessageAsync(message);
-                await SetStatusAsync(message);
-                await DisplayAlert("Wikipedia integration", message, "OK");
-                return;
-            }
-
-            await AppendWikipediaSummaryAsync(summary);
-            await SetStatusAsync("Wikipedia summary added. Regenerate the story to include these details.");
-        }
-        catch (OperationCanceledException)
-        {
-            await SetStatusAsync("Wikipedia integration was canceled.");
-        }
-        catch (Exception ex)
-        {
-            var message = $"Wikipedia integration failed. {ex.Message}";
-            await AppendWikipediaMessageAsync(message);
-            await SetStatusAsync(message);
-            await MainThread.InvokeOnMainThreadAsync(async () =>
-            {
-                await DisplayAlert("Wikipedia integration failed", ex.Message, "OK");
-            });
-        }
-        finally
-        {
-            if (ReferenceEquals(_wikipediaCts, cts))
-            {
-                _wikipediaCts = null;
-            }
-            cts.Dispose();
-            _isWikipediaBusy = false;
-            UpdateWikipediaControls();
-        }
-    }
-
-    private async void OnFactCheckClicked(object? sender, EventArgs e)
-    {
-        if (_isFactChecking)
-        {
-            return;
-        }
-
-        var story = StoryEditor.Text?.Trim();
-        if (string.IsNullOrWhiteSpace(story))
-        {
-            await DisplayAlert("Story unavailable", "There's no story to check right now.", "OK");
-            return;
-        }
-
-        _factCheckCts?.Cancel();
-        _factCheckCts?.Dispose();
-        var cts = new CancellationTokenSource();
-        _factCheckCts = cts;
-
-        try
-        {
-            await SetFactCheckBusyStateAsync(true, "Checking story facts…");
-
-            var address = GetAddressForStory();
-            var exchange = await _storyService.VerifyStoryFactsWithRawAsync(
-                _buildingName,
-                address,
-                story,
-                _buildingFacts,
-                cts.Token);
-
-            cts.Token.ThrowIfCancellationRequested();
-
-            await ShowFactCheckRawResponseAsync(exchange.RawResponse);
-
-            cts.Token.ThrowIfCancellationRequested();
-
-            await ShowFactCheckResultAsync(exchange.Result);
-        }
-        catch (OperationCanceledException)
-        {
-            await ShowFactCheckCanceledAsync();
-        }
-        catch (Exception ex)
-        {
-            await ShowFactCheckErrorAsync(ex.Message);
-            await DisplayAlert("Fact check failed", ex.Message, "OK");
-        }
-        finally
-        {
-            if (ReferenceEquals(_factCheckCts, cts))
-            {
-                _factCheckCts = null;
-            }
-
-            cts.Dispose();
-        }
-    }
-
-    private Task SetFactCheckBusyStateAsync(bool isBusy, string statusMessage)
-    {
-        return MainThread.InvokeOnMainThreadAsync(() =>
-        {
-            _isFactChecking = isBusy;
-            FactCheckButton.IsEnabled = !isBusy && !string.IsNullOrWhiteSpace(StoryEditor.Text);
-            FactCheckStatusGrid.IsVisible = true;
-            FactCheckIndicator.IsVisible = isBusy;
-            FactCheckIndicator.IsRunning = isBusy;
-            FactCheckStatusLabel.Text = statusMessage;
-            FactCheckIssuesLabel.IsVisible = false;
-        });
-    }
-
-    private Task ShowFactCheckCanceledAsync()
-    {
-        return MainThread.InvokeOnMainThreadAsync(() =>
-        {
-            _isFactChecking = false;
-            FactCheckButton.IsEnabled = !string.IsNullOrWhiteSpace(StoryEditor.Text);
-            FactCheckIndicator.IsVisible = false;
-            FactCheckIndicator.IsRunning = false;
-            FactCheckStatusGrid.IsVisible = true;
-            FactCheckStatusLabel.Text = "Fact check canceled.";
-            FactCheckIssuesLabel.IsVisible = false;
-        });
-    }
-
-    private Task ShowFactCheckRawResponseAsync(string rawResponse)
-    {
-        if (string.IsNullOrWhiteSpace(rawResponse))
-        {
-            return Task.CompletedTask;
-        }
-
-        return MainThread.InvokeOnMainThreadAsync(() =>
-        {
-            return DisplayAlert(
-                "OpenAI fact check response",
-                rawResponse,
-                "Continue");
-        });
-    }
-
-    private Task ShowFactCheckResultAsync(StoryFactCheckResult result)
-    {
-        return MainThread.InvokeOnMainThreadAsync(() =>
-        {
-            _isFactChecking = false;
-            FactCheckButton.IsEnabled = !string.IsNullOrWhiteSpace(StoryEditor.Text);
-            FactCheckIndicator.IsVisible = false;
-            FactCheckIndicator.IsRunning = false;
-            FactCheckStatusGrid.IsVisible = true;
-
-            var verdictLabel = result.Verdict switch
-            {
-                "aligned" => "All story details align with the verified facts.",
-                "mixed" => "Some details align, but a few need attention.",
-                "issues" => "The story contains details that conflict with the facts.",
-                "insufficient_data" => "Not enough verified facts are available to confirm the story.",
-                _ => "Fact check completed."
-            };
-
-            if (!string.IsNullOrWhiteSpace(result.Summary))
-            {
-                FactCheckStatusLabel.Text = result.Summary.Trim();
-            }
-            else
-            {
-                FactCheckStatusLabel.Text = verdictLabel;
-            }
-
-            if (result.Warnings.Count > 0)
-            {
-                var builder = new StringBuilder();
-                foreach (var warning in result.Warnings)
-                {
-                    if (builder.Length > 0)
-                    {
-                        builder.AppendLine();
-                        builder.AppendLine();
-                    }
-
-                    builder.Append("• ");
-                    builder.Append(warning.Claim);
-                    if (!string.IsNullOrWhiteSpace(warning.Issue))
-                    {
-                        builder.Append(" — ");
-                        builder.Append(warning.Issue.Trim());
-                    }
-                    if (!string.IsNullOrWhiteSpace(warning.Recommendation))
-                    {
-                        builder.Append(" (" + warning.Recommendation.Trim() + ")");
-                    }
-                }
-
-                FactCheckIssuesLabel.Text = builder.ToString();
-                FactCheckIssuesLabel.IsVisible = true;
-            }
-            else
-            {
-                FactCheckIssuesLabel.Text = string.Empty;
-                FactCheckIssuesLabel.IsVisible = false;
-            }
-        });
-    }
-
-    private Task ShowFactCheckErrorAsync(string message)
-    {
-        return MainThread.InvokeOnMainThreadAsync(() =>
-        {
-            _isFactChecking = false;
-            FactCheckButton.IsEnabled = !string.IsNullOrWhiteSpace(StoryEditor.Text);
-            FactCheckIndicator.IsVisible = false;
-            FactCheckIndicator.IsRunning = false;
-            FactCheckStatusGrid.IsVisible = true;
-            FactCheckStatusLabel.Text = $"Could not verify the story. {message}";
-            FactCheckIssuesLabel.IsVisible = false;
-        });
-    }
-
-    private void ResetFactCheckResults()
-    {
-        if (_isFactChecking)
-        {
-            return;
-        }
-
-        FactCheckStatusGrid.IsVisible = false;
-        FactCheckIndicator.IsVisible = false;
-        FactCheckIndicator.IsRunning = false;
-        FactCheckStatusLabel.Text = string.Empty;
-        FactCheckIssuesLabel.Text = string.Empty;
-        FactCheckIssuesLabel.IsVisible = false;
-    }
-
-    private Task AppendWikipediaSummaryAsync(WikipediaSummary summary)
-    {
-        return MainThread.InvokeOnMainThreadAsync(() =>
-        {
-            var builder = new StringBuilder();
-            var existing = StoryEditor.Text;
-            if (!string.IsNullOrWhiteSpace(existing))
-            {
-                builder.Append(existing.TrimEnd());
-                builder.AppendLine();
-                builder.AppendLine();
-            }
-
-            builder.AppendLine($"Wikipedia summary — {summary.Title}");
-
-            var summaryText = !string.IsNullOrWhiteSpace(summary.Extract)
-                ? summary.Extract.Trim()
-                : summary.Description?.Trim();
-
-            if (!string.IsNullOrWhiteSpace(summaryText))
-            {
-                builder.AppendLine(summaryText);
-            }
-            else
-            {
-                builder.AppendLine("No summary was available for this article.");
-            }
-
-            if (!string.IsNullOrWhiteSpace(summary.Url))
-            {
-                builder.AppendLine();
-                builder.AppendLine(summary.Url);
-            }
-
-            StoryEditor.Text = builder.ToString();
-
-            var wikipediaFacts = BuildWikipediaFactBlock(summary);
-            if (!string.IsNullOrWhiteSpace(wikipediaFacts))
-            {
-                _buildingFacts = string.IsNullOrWhiteSpace(_buildingFacts)
-                    ? wikipediaFacts
-                    : $"{_buildingFacts.Trim()}{Environment.NewLine}{Environment.NewLine}{wikipediaFacts}";
-                UpdatePromptPreview();
-            }
-        });
-    }
-
-    private Task AppendWikipediaMessageAsync(string message)
-    {
-        return MainThread.InvokeOnMainThreadAsync(() =>
-        {
-            var builder = new StringBuilder();
-            var existing = StoryEditor.Text;
-            if (!string.IsNullOrWhiteSpace(existing))
-            {
-                builder.Append(existing.TrimEnd());
-                builder.AppendLine();
-                builder.AppendLine();
-            }
-
-            builder.AppendLine(message);
-            StoryEditor.Text = builder.ToString();
-        });
-    }
-
-    private static string? BuildWikipediaFactBlock(WikipediaSummary summary)
-    {
-        var builder = new StringBuilder();
-
-        if (!string.IsNullOrWhiteSpace(summary.Title))
-        {
-            builder.AppendLine($"Wikipedia article: {summary.Title}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(summary.Extract))
-        {
-            builder.AppendLine(summary.Extract.Trim());
-        }
-        else if (!string.IsNullOrWhiteSpace(summary.Description))
-        {
-            builder.AppendLine(summary.Description.Trim());
-        }
-
-        if (!string.IsNullOrWhiteSpace(summary.Url))
-        {
-            builder.AppendLine($"Source: {summary.Url}");
-        }
-
-        var text = builder.ToString().Trim();
-        return string.IsNullOrWhiteSpace(text) ? null : text;
-    }
-
-    private async void OnPromptInfoClicked(object? sender, EventArgs e)
-    {
-        var prompt = PromptLabel.Text;
-        if (string.IsNullOrWhiteSpace(prompt))
-        {
-            await DisplayAlert("Story prompt", "The story prompt will be available after the first story is generated.", "OK");
-            return;
-        }
-
-        await DisplayAlert("Story prompt", prompt, "Close");
     }
 
     private void OnSendChatClicked(object? sender, EventArgs e)
@@ -1118,7 +480,6 @@ namespace CityTour
             var address = GetAddressForStory();
             var storyText = string.IsNullOrWhiteSpace(StoryEditor.Text) ? null : StoryEditor.Text;
 
-            var previousTokenLimit = _storyService.MaxOutputTokens;
             var response = await _storyService.AskAddressDetailsAsync(
                 _buildingName,
                 address,
@@ -1129,19 +490,7 @@ namespace CityTour
             cts.Token.ThrowIfCancellationRequested();
 
             await AddChatMessageAsync(new ChatMessage(response, isUser: false));
-            if (_storyService.MaxOutputTokens != previousTokenLimit)
-            {
-                await MainThread.InvokeOnMainThreadAsync(() => SyncMaxTokensFromService(clearErrors: true));
-            }
-
-            var followUpStatus = ChatFollowUpStatusMessage;
-            if (_storyService.MaxOutputTokens != previousTokenLimit)
-            {
-                var increasedText = _storyService.MaxOutputTokens.ToString("N0", CultureInfo.CurrentCulture);
-                followUpStatus += $" Max AI response tokens automatically increased to {increasedText}.";
-            }
-
-            await SetChatBusyStateAsync(false, followUpStatus);
+            await SetChatBusyStateAsync(false, ChatFollowUpStatusMessage);
         }
         catch (OperationCanceledException)
         {
@@ -1197,8 +546,6 @@ namespace CityTour
     private void OnStoryTextChanged(object? sender, TextChangedEventArgs e)
     {
         UpdateAudioControls();
-        ResetFactCheckResults();
-        UpdateFactCheckControls();
     }
 
     private async void OnListenClicked(object? sender, EventArgs e)
@@ -1434,5 +781,4 @@ namespace CityTour
                 : $"{display} ({name})";
         }
     }
-}
 }
