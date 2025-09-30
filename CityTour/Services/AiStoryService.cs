@@ -251,9 +251,13 @@ public class AiStoryService : IAiStoryService
             {
                 new JsonObject { ["role"] = "system", ["content"] = SystemMessage },
                 new JsonObject { ["role"] = "user", ["content"] = prompt }
-            },
-            ["temperature"] = temperature
+            }
         };
+
+        if (SupportsCustomTemperature(_model))
+        {
+            payload["temperature"] = temperature;
+        }
 
         if (RequiresMaxCompletionTokens(_model))
         {
@@ -308,6 +312,15 @@ public class AiStoryService : IAiStoryService
     private static bool RequiresMaxCompletionTokens(string model)
     {
         return model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool SupportsCustomTemperature(string model)
+    {
+        // The current GPT-5 family requires the default temperature of 1.0 and rejects
+        // requests that explicitly set a different value. Omitting the field lets the
+        // service fall back to its supported default while still allowing other models
+        // to use tuned temperatures.
+        return !model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
     }
 
     private string GetOrThrowApiKey()
