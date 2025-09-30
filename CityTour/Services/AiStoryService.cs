@@ -76,6 +76,10 @@ FACTS:
 
 TASK:
 Write a chronological 120–150 word history that highlights the founding date, any name changes, two to three pivotal events, and why the place matters today. Keep the tone warm but precise.";
+    private const string HistoryPromptTemplateNoFacts = @"You are a meticulous local historian introducing visitors to {building_name} at {address}. Write the story in {language}.
+
+TASK:
+Write a chronological 120–150 word history that highlights the founding date, any name changes, two to three pivotal events, and why the place matters today. Keep the tone warm but precise, and rely on broadly known or well-documented details.";
     private const string PersonalitiesPromptTemplate = @"You are a culturally savvy guide explaining the people connected to {building_name} at {address}. Respond in {language}.
 
 Use only the verified facts below. If information about a figure is missing, be transparent about the uncertainty.
@@ -85,6 +89,10 @@ FACTS:
 
 TASK:
 Craft a 110–140 word mini-story that weaves in two to three notable figures with full names, relevant dates, their roles, and one concrete anecdote each.";
+    private const string PersonalitiesPromptTemplateNoFacts = @"You are a culturally savvy guide explaining the people connected to {building_name} at {address}. Respond in {language}.
+
+TASK:
+Craft a 110–140 word mini-story that weaves in two to three notable figures with full names, relevant dates, their roles, and one concrete anecdote each. Keep the tone lively yet trustworthy, drawing on well-established historical knowledge.";
     private const string ArchitecturePromptTemplate = @"You are an architect talking to curious visitors about {building_name} at {address}. Answer in {language}.
 
 Ground every observation in the verified facts provided. Do not speculate about elements that are not documented.
@@ -94,6 +102,10 @@ FACTS:
 
 TASK:
 Describe the site's architectural style, architect, era, materials, notable façade or interior details, significant alterations, and two street-level features to notice in roughly 120–150 words.";
+    private const string ArchitecturePromptTemplateNoFacts = @"You are an architect talking to curious visitors about {building_name} at {address}. Answer in {language}.
+
+TASK:
+Describe the site's architectural style, architect, era, materials, notable façade or interior details, significant alterations, and two street-level features to notice in roughly 120–150 words. Keep the tone observational and precise, noting any uncertainties briefly.";
     private const string TodayPromptTemplate = @"You are a practical local host briefing visitors about {building_name} at {address}. Respond in {language}.
 
 Rely only on the verified facts below. If a requested detail is missing, clearly note that it is not documented.
@@ -103,6 +115,10 @@ FACTS:
 
 TASK:
 Summarize in 90–120 words the current purpose or occupants, public access details (such as hours, ticketing, accessibility), photo or etiquette guidance, and one nearby tip.";
+    private const string TodayPromptTemplateNoFacts = @"You are a practical local host briefing visitors about {building_name} at {address}. Respond in {language}.
+
+TASK:
+Summarize in 90–120 words the current purpose or occupants, public access details (such as hours, ticketing, accessibility), photo or etiquette guidance, and one nearby tip. Share reliable, commonly known details and mention if something is unclear.";
     private const string KidsPromptTemplate = @"You are a playful storyteller for children aged 6–10 visiting {building_name} at {address}. Tell the tale in {language}.
 
 Stick to the verified facts. Highlight what is known and gently mention when a detail is unknown.
@@ -112,6 +128,10 @@ FACTS:
 
 TASK:
 Tell a cheerful 90–110 word story using simple sentences, fun comparisons or sounds, one exciting fact from the list, no frightening content, and end with a question that invites kids to spot something when they arrive.";
+    private const string KidsPromptTemplateNoFacts = @"You are a playful storyteller for children aged 6–10 visiting {building_name} at {address}. Tell the tale in {language}.
+
+TASK:
+Tell a cheerful 90–110 word story using simple sentences, fun comparisons or sounds, one exciting highlight, no frightening content, and end with a question that invites kids to spot something when they arrive. Keep the story positive and honest about any uncertainties.";
 
     private static readonly JsonSerializerOptions RequestJsonOptions = new JsonSerializerOptions()
     {
@@ -297,29 +317,38 @@ Tell a cheerful 90–110 word story using simple sentences, fun comparisons or s
         string? facts = null,
         string? language = null)
     {
-        var template = GetPromptTemplate(category);
-        var resolvedFacts = ResolveFacts(facts);
+        var hasFacts = !string.IsNullOrWhiteSpace(facts);
+        var template = GetPromptTemplate(category, hasFacts);
+        var resolvedFacts = hasFacts ? ResolveFacts(facts) : string.Empty;
         var resolvedName = ResolveBuildingName(buildingName, buildingAddress);
         var resolvedAddress = ResolveAddress(buildingAddress);
         var resolvedLanguage = ResolveLanguage(language);
 
-        return template
-            .Replace("{facts}", resolvedFacts, StringComparison.Ordinal)
+        var prompt = template
             .Replace("{building_name}", resolvedName, StringComparison.Ordinal)
             .Replace("{address}", resolvedAddress, StringComparison.Ordinal)
             .Replace("{language}", resolvedLanguage, StringComparison.Ordinal);
+
+        return hasFacts
+            ? prompt.Replace("{facts}", resolvedFacts, StringComparison.Ordinal)
+            : prompt;
     }
 
-    private static string GetPromptTemplate(StoryCategory category)
+    private static string GetPromptTemplate(StoryCategory category, bool hasFacts)
     {
-        return category switch
+        return (category, hasFacts) switch
         {
-            StoryCategory.History => HistoryPromptTemplate,
-            StoryCategory.Personalities => PersonalitiesPromptTemplate,
-            StoryCategory.Architecture => ArchitecturePromptTemplate,
-            StoryCategory.Today => TodayPromptTemplate,
-            StoryCategory.Kids => KidsPromptTemplate,
-            _ => HistoryPromptTemplate
+            (StoryCategory.History, true) => HistoryPromptTemplate,
+            (StoryCategory.History, false) => HistoryPromptTemplateNoFacts,
+            (StoryCategory.Personalities, true) => PersonalitiesPromptTemplate,
+            (StoryCategory.Personalities, false) => PersonalitiesPromptTemplateNoFacts,
+            (StoryCategory.Architecture, true) => ArchitecturePromptTemplate,
+            (StoryCategory.Architecture, false) => ArchitecturePromptTemplateNoFacts,
+            (StoryCategory.Today, true) => TodayPromptTemplate,
+            (StoryCategory.Today, false) => TodayPromptTemplateNoFacts,
+            (StoryCategory.Kids, true) => KidsPromptTemplate,
+            (StoryCategory.Kids, false) => KidsPromptTemplateNoFacts,
+            _ => hasFacts ? HistoryPromptTemplate : HistoryPromptTemplateNoFacts
         };
     }
 
