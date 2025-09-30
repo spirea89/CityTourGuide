@@ -10,6 +10,7 @@ public interface IApiKeyProvider
     string? GoogleMapsApiKey { get; }
     string? GooglePlacesApiKey { get; }
     string? OpenAiApiKey { get; }
+    string? WikipediaApiKey { get; }
 }
 
 public class ApiKeyProvider : IApiKeyProvider
@@ -25,6 +26,7 @@ public class ApiKeyProvider : IApiKeyProvider
     public string? GoogleMapsApiKey => Normalize(_secrets.Value.GoogleMapsApiKey);
     public string? GooglePlacesApiKey => Normalize(_secrets.Value.GooglePlacesApiKey);
     public string? OpenAiApiKey => Normalize(_secrets.Value.OpenAiApiKey);
+    public string? WikipediaApiKey => Normalize(_secrets.Value.WikipediaApiKey);
 
     private static ApiKeyPayload LoadSecrets()
     {
@@ -96,5 +98,6 @@ public class ApiKeyProvider : IApiKeyProvider
         public string? GoogleMapsApiKey { get; set; }
         public string? GooglePlacesApiKey { get; set; }
         public string? OpenAiApiKey { get; set; }
+        public string? WikipediaApiKey { get; set; }
     }
 }
