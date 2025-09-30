@@ -48,15 +48,23 @@
 
         <Grid Grid.Row="5"
               ColumnDefinitions="Auto,*"
+              RowDefinitions="Auto,Auto"
               ColumnSpacing="8">
             <ActivityIndicator x:Name="LoadingIndicator"
                                 VerticalOptions="Center"
                                 IsVisible="False"
                                 IsRunning="False" />
             <Label x:Name="StatusLabel"
+                   Grid.Column="1"
                    VerticalOptions="Center"
                    LineBreakMode="WordWrap"
                    TextColor="{AppThemeBinding Light=#555, Dark=#CCC}" />
+            <Button x:Name="ShowRawResponseButton"
+                    Grid.Row="1"
+                    Grid.ColumnSpan="2"
+                    Text="View raw OpenAI response"
+                    IsVisible="False"
+                    Clicked="OnShowRawResponseClicked" />
         </Grid>
 
         <Editor x:Name="StoryEditor"
