@@ -799,7 +799,7 @@ namespace CityTour
             await SetFactCheckBusyStateAsync(true, "Checking story facts…");
 
             var address = GetAddressForStory();
-            var result = await _storyService.VerifyStoryFactsAsync(
+            var exchange = await _storyService.VerifyStoryFactsWithRawAsync(
                 _buildingName,
                 address,
                 story,
@@ -808,7 +808,11 @@ namespace CityTour
 
             cts.Token.ThrowIfCancellationRequested();
 
-            await ShowFactCheckResultAsync(result);
+            await ShowFactCheckRawResponseAsync(exchange.RawResponse);
+
+            cts.Token.ThrowIfCancellationRequested();
+
+            await ShowFactCheckResultAsync(exchange.Result);
         }
         catch (OperationCanceledException)
         {
@@ -855,6 +859,22 @@ namespace CityTour
             FactCheckStatusGrid.IsVisible = true;
             FactCheckStatusLabel.Text = "Fact check canceled.";
             FactCheckIssuesLabel.IsVisible = false;
+        });
+    }
+
+    private Task ShowFactCheckRawResponseAsync(string rawResponse)
+    {
+        if (string.IsNullOrWhiteSpace(rawResponse))
+        {
+            return Task.CompletedTask;
+        }
+
+        return MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            return DisplayAlert(
+                "OpenAI fact check response",
+                rawResponse,
+                "Continue");
         });
     }
 
