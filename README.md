@@ -91,11 +91,3 @@ pre-commit install
 
 Running `pre-commit run --all-files` will scan the repository for potential
 secrets before they reach version control.
-
-## Story canvas testing notes
-
-The story canvas now exposes a **Max AI response tokens** field beneath the
-model picker. Testers can raise the limit (default `600`) up to `4,096` tokens
-to allow longer narratives or follow-up answers. Entering a value below `200`
-or above the cap resets the field and shows a validation message so the limit
-always stays within the supported OpenAI range.

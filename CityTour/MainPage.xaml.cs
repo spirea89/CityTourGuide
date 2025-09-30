@@ -13,18 +13,17 @@ using System.Threading.Tasks;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Storage; // Preferences
 
-namespace CityTour
+namespace CityTour;
+
+public partial class MainPage : ContentPage
 {
-    public partial class MainPage : ContentPage
-    {
     private readonly PlaceService _service;
     private readonly IAiStoryService _storyService;
     private readonly IApiKeyProvider _apiKeys;
-    private readonly IWikipediaService _wikipediaService;
-    private List<Place> _allPlaces = new List<Place>();
+    private List<Place> _allPlaces = new();
 
     // Google Places (Web)
-    private readonly HttpClient _http = new HttpClient();
+    private readonly HttpClient _http = new();
 
     // Live suggestions
     private CancellationTokenSource? _typeCts;
@@ -35,13 +34,12 @@ namespace CityTour
     private Location? _streetViewLocation;
     private const string SavedBuildingsKey = "citytour.saved_buildings";
 
-    public MainPage(PlaceService service, IAiStoryService storyService, IApiKeyProvider apiKeyProvider, IWikipediaService wikipediaService)
+    public MainPage(PlaceService service, IAiStoryService storyService, IApiKeyProvider apiKeyProvider)
     {
         InitializeComponent();
         _service = service;
         _storyService = storyService;
         _apiKeys = apiKeyProvider;
-        _wikipediaService = wikipediaService;
     }
 
     protected override void OnAppearing()
@@ -95,53 +93,11 @@ namespace CityTour
             return;
         }
 
-        var filter = text.Trim();
-        if (filter.Length == 0)
-        {
-            RefreshPins(_allPlaces);
-            return;
-        }
-
         var filtered = _allPlaces
-            .Where(p => AddressMatches(p, filter))
+            .Where(p => p.Name.Contains(text, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         RefreshPins(filtered);
-    }
-
-    private static bool AddressMatches(Place place, string filter)
-    {
-        if (string.IsNullOrWhiteSpace(filter))
-        {
-            return true;
-        }
-
-        var rawAddress = place.Address ?? string.Empty;
-        if (rawAddress.Contains(filter, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var parsed = AddressFormatter.Parse(rawAddress);
-
-        return MatchesAddressSegment(parsed.StreetAndNumber, filter)
-            || MatchesAddressSegment(parsed.City, filter)
-            || MatchesAddressSegment(parsed.Country, filter)
-            || MatchesAddressSegment(parsed.DisplayAddress, filter)
-            || MatchesAddressSegment(parsed.StoryAddress, filter)
-            || MatchesAddressSegment(parsed.Original, filter);
-    }
-
-    private static bool MatchesAddressSegment(string? segment, string filter)
-    {
-        if (string.IsNullOrWhiteSpace(segment))
-        {
-            return false;
-        }
-
-        var compareInfo = CultureInfo.CurrentCulture.CompareInfo;
-        const CompareOptions options = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace | CompareOptions.IgnoreSymbols;
-        return compareInfo.IndexOf(segment, filter, options) >= 0;
     }
 
     // SearchBar events
@@ -520,7 +476,7 @@ iframe {{ border: 0; width: 100%; height: 100%; border-radius: 12px; }}
             storyAddress,
             buildingFacts,
             _storyService,
-            _wikipediaService,
+            _apiKeys,
             lat,
             lng));
     }
@@ -713,5 +669,4 @@ iframe {{ border: 0; width: 100%; height: 100%; border-radius: 12px; }}
         public double Longitude { get; set; }
         public DateTime SavedAtUtc { get; set; }
     }
-}
 }

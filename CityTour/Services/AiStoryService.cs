@@ -1,22 +1,16 @@
-using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using CityTour.Models;
 using Microsoft.Maui.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace CityTour.Services
+namespace CityTour.Services;
+
+public interface IAiStoryService
 {
-    public interface IAiStoryService
-    {
     string CurrentModel { get; }
-    int MaxOutputTokens { get; }
-    int MinSupportedOutputTokens { get; }
-    int MaxSupportedOutputTokens { get; }
 
     Task<StoryGenerationResult> GenerateStoryAsync(
         string buildingName,
@@ -33,20 +27,6 @@ namespace CityTour.Services
         string question,
         CancellationToken cancellationToken = default);
 
-    Task<(string RawResponse, StoryFactCheckResult Result)> VerifyStoryFactsWithRawAsync(
-        string buildingName,
-        string? buildingAddress,
-        string story,
-        string? facts = null,
-        CancellationToken cancellationToken = default);
-
-    Task<StoryFactCheckResult> VerifyStoryFactsAsync(
-        string buildingName,
-        string? buildingAddress,
-        string story,
-        string? facts = null,
-        CancellationToken cancellationToken = default);
-
     string BuildStoryPrompt(
         string buildingName,
         string? buildingAddress,
@@ -55,17 +35,12 @@ namespace CityTour.Services
         string? language = null);
 
     void SetModel(string model);
-    void SetMaxOutputTokens(int maxTokens);
 }
 
-    public class AiStoryService : IAiStoryService
-    {
-    private const string DefaultModel = "gpt-5";
+public class AiStoryService : IAiStoryService
+{
+    private const string DefaultModel = "gpt-4o-mini";
     private const string ModelPreferenceKey = "ai.story.model";
-    private const string MaxTokensPreferenceKey = "ai.story.max_tokens";
-    private const int DefaultMaxOutputTokens = 600;
-    private const int MinimumOutputTokens = 200;
-    private const int MaximumOutputTokens = 4096;
     private const string SystemMessage = "You are a creative, historically knowledgeable city tour guide. Craft short stories and responses about buildings that feel authentic, welcoming, and vivid.";
     private const string HistoryPromptTemplate = "You are a meticulous local historian. Using only facts about {address}, write a vivid, chronological ~120–150 word history highlighting founding date, name changes, 2–3 pivotal events, and significance.";
     private const string PersonalitiesPromptTemplate = "You are a culturally savvy guide. From facts on people linked to {address}, craft a ~110–140 word mini-story weaving 2–3 notable figures with full names, dates, roles, and one concrete anecdote each; avoid speculation.";
@@ -73,62 +48,11 @@ namespace CityTour.Services
     private const string TodayPromptTemplate = "You are a practical local host. In ~90–120 words, summarize {address}’s current purpose/occupants, public access (hours, tickets, accessibility), photo/etiquette notes, and one nearby tip; if any item isn’t in facts.” ";
     private const string KidsPromptTemplate = "You are a playful storyteller for ages 6–10. In ~90–110 words, tell a cheerful, simple story about {address} using easy sentences, fun comparisons or sounds, one cool fact from facts, no scary content, and end with a question inviting kids to spot a detail when they visit.";
 
-    private static readonly JsonSerializerOptions RequestJsonOptions = new JsonSerializerOptions()
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
-    private static readonly object FactCheckResponseFormat = new
-    {
-        type = "json_schema",
-        json_schema = new
-        {
-            name = "story_fact_check",
-            schema = new
-            {
-                type = "object",
-                additionalProperties = false,
-                required = new[] { "overall_verdict", "summary", "confirmed_facts", "warnings" },
-                properties = new
-                {
-                    overall_verdict = new
-                    {
-                        type = "string",
-                        @enum = new[] { "aligned", "mixed", "issues", "insufficient_data" }
-                    },
-                    summary = new { type = "string" },
-                    confirmed_facts = new
-                    {
-                        type = "array",
-                        items = new { type = "string" }
-                    },
-                    warnings = new
-                    {
-                        type = "array",
-                        items = new
-                        {
-                            type = "object",
-                            additionalProperties = false,
-                            required = new[] { "claim", "issue", "recommendation" },
-                            properties = new
-                            {
-                                claim = new { type = "string" },
-                                issue = new { type = "string" },
-                                recommendation = new { type = "string" }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
-
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiStoryService> _logger;
     private readonly IApiKeyProvider _apiKeyProvider;
     private string _model;
     private string? _apiKey;
-    private int _maxOutputTokens;
 
     public AiStoryService(HttpClient httpClient, ILogger<AiStoryService> logger, IApiKeyProvider apiKeyProvider)
     {
@@ -138,18 +62,9 @@ namespace CityTour.Services
         _apiKeyProvider = apiKeyProvider;
         var savedModel = Preferences.Get(ModelPreferenceKey, DefaultModel);
         _model = string.IsNullOrWhiteSpace(savedModel) ? DefaultModel : savedModel.Trim();
-        var savedMaxTokens = Preferences.Get(MaxTokensPreferenceKey, DefaultMaxOutputTokens);
-        _maxOutputTokens = ClampOutputTokens(savedMaxTokens);
-        if (_maxOutputTokens != savedMaxTokens)
-        {
-            Preferences.Set(MaxTokensPreferenceKey, _maxOutputTokens);
-        }
     }
 
     public string CurrentModel => _model;
-    public int MaxOutputTokens => _maxOutputTokens;
-    public int MinSupportedOutputTokens => MinimumOutputTokens;
-    public int MaxSupportedOutputTokens => MaximumOutputTokens;
 
     public void SetModel(string model)
     {
@@ -168,18 +83,6 @@ namespace CityTour.Services
         Preferences.Set(ModelPreferenceKey, _model);
     }
 
-    public void SetMaxOutputTokens(int maxTokens)
-    {
-        var clamped = ClampOutputTokens(maxTokens);
-        if (_maxOutputTokens == clamped)
-        {
-            return;
-        }
-
-        _maxOutputTokens = clamped;
-        Preferences.Set(MaxTokensPreferenceKey, _maxOutputTokens);
-    }
-
     public async Task<StoryGenerationResult> GenerateStoryAsync(
         string buildingName,
         string? buildingAddress,
@@ -194,60 +97,9 @@ namespace CityTour.Services
         }
 
         var prompt = BuildStoryPrompt(buildingName, buildingAddress, category, facts, language);
-        var story = await SendResponseAsync(prompt, _maxOutputTokens, "story", cancellationToken);
+        var story = await SendChatCompletionAsync(prompt, 0.8, 600, "story", cancellationToken);
 
         return new StoryGenerationResult(story, prompt);
-    }
-
-    public async Task<(string RawResponse, StoryFactCheckResult Result)> VerifyStoryFactsWithRawAsync(
-        string buildingName,
-        string? buildingAddress,
-        string story,
-        string? facts = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(buildingName) && string.IsNullOrWhiteSpace(buildingAddress))
-        {
-            throw new ArgumentException("A building name or address is required.", nameof(buildingName));
-        }
-
-        if (string.IsNullOrWhiteSpace(story))
-        {
-            throw new ArgumentException("Story text is required for fact checking.", nameof(story));
-        }
-
-        var prompt = BuildFactCheckPrompt(buildingName, buildingAddress, story, facts);
-        var response = await SendResponseAsync(
-            prompt,
-            800,
-            "fact check",
-            cancellationToken,
-            FactCheckResponseFormat);
-
-        if (string.IsNullOrWhiteSpace(response))
-        {
-            throw new InvalidOperationException("OpenAI did not return fact-check results.");
-        }
-
-        var parsed = ParseFactCheckResult(response);
-        return (response, parsed);
-    }
-
-    public async Task<StoryFactCheckResult> VerifyStoryFactsAsync(
-        string buildingName,
-        string? buildingAddress,
-        string story,
-        string? facts = null,
-        CancellationToken cancellationToken = default)
-    {
-        var result = await VerifyStoryFactsWithRawAsync(
-            buildingName,
-            buildingAddress,
-            story,
-            facts,
-            cancellationToken);
-
-        return result.Result;
     }
 
     public string BuildStoryPrompt(
@@ -258,7 +110,7 @@ namespace CityTour.Services
         string? language = null)
     {
         var template = GetPromptTemplate(category);
-        var resolvedFacts = ResolveFactsForStory(facts);
+        var resolvedFacts = ResolveFacts(facts);
         var resolvedName = ResolveBuildingName(buildingName, buildingAddress);
         var resolvedAddress = ResolveAddress(buildingAddress);
         var resolvedLanguage = ResolveLanguage(language);
@@ -283,41 +135,9 @@ namespace CityTour.Services
         };
     }
 
-    private static string ResolveFactsForStory(string? facts)
+    private static string ResolveFacts(string? facts)
     {
         return string.IsNullOrWhiteSpace(facts) ? "unknown" : facts.Trim();
-    }
-
-    private static string FormatFactsList(string? facts)
-    {
-        if (string.IsNullOrWhiteSpace(facts))
-        {
-            return "No verified facts were provided. Explain to the visitor that trustworthy details for this site could not be confirmed.";
-        }
-
-        var lines = facts
-            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-
-        var builder = new StringBuilder();
-        foreach (var rawLine in lines)
-        {
-            var line = rawLine.Trim();
-            if (line.Length == 0)
-            {
-                continue;
-            }
-
-            if (!line.StartsWith("-"))
-            {
-                builder.Append("- ");
-            }
-
-            builder.Append(line);
-            builder.AppendLine();
-        }
-
-        var formatted = builder.ToString().TrimEnd();
-        return formatted.Length > 0 ? formatted : facts.Trim();
     }
 
     private static string ResolveBuildingName(string buildingName, string? buildingAddress)
@@ -375,7 +195,7 @@ namespace CityTour.Services
         }
 
         var prompt = BuildFollowUpPrompt(buildingName, buildingAddress, currentStory, question);
-        return await SendResponseAsync(prompt, _maxOutputTokens, "follow-up answer", cancellationToken);
+        return await SendChatCompletionAsync(prompt, 0.7, 400, "follow-up answer", cancellationToken);
     }
 
     private string BuildFollowUpPrompt(
@@ -414,269 +234,66 @@ namespace CityTour.Services
         return promptBuilder.ToString().Trim();
     }
 
-    private async Task<string> SendResponseAsync(
+    private async Task<string> SendChatCompletionAsync(
         string prompt,
-        int maxOutputTokens,
+        double temperature,
+        int maxTokens,
         string failureContext,
-        CancellationToken cancellationToken,
-        object? responseFormat = null)
+        CancellationToken cancellationToken)
     {
         var key = GetOrThrowApiKey();
-        var attemptTokens = ClampOutputTokens(maxOutputTokens);
 
-        while (true)
+        var payload = new
         {
-            var payload = new
+            model = _model,
+            messages = new object[]
             {
-                model = _model,
-                input = new object[]
-                {
-                    new
-                    {
-                        role = "system",
-                        content = new object[]
-                        {
-                            new { type = "input_text", text = SystemMessage }
-                        }
-                    },
-                    new
-                    {
-                        role = "user",
-                        content = new object[]
-                        {
-                            new { type = "input_text", text = prompt }
-                        }
-                    }
-                },
-                max_output_tokens = attemptTokens,
-                response_format = responseFormat
-            };
+                new { role = "system", content = SystemMessage },
+                new { role = "user", content = prompt }
+            },
+            temperature,
+            max_tokens = maxTokens
+        };
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-            request.Content = new StringContent(JsonSerializer.Serialize(payload, RequestJsonOptions), Encoding.UTF8, "application/json");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
-            var responseBody = await response.Content.ReadAsStringAsync();
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync();
 
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorMessage = TryExtractErrorMessage(responseBody);
-                var friendlyMessage = string.IsNullOrWhiteSpace(errorMessage)
-                    ? $"OpenAI API error ({(int)response.StatusCode})."
-                    : $"OpenAI API error ({(int)response.StatusCode}): {errorMessage}";
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorMessage = TryExtractErrorMessage(responseBody);
+            var friendlyMessage = string.IsNullOrWhiteSpace(errorMessage)
+                ? $"OpenAI API error ({(int)response.StatusCode})."
+                : $"OpenAI API error ({(int)response.StatusCode}): {errorMessage}";
 
-                _logger.LogError("OpenAI API returned {Status}: {Body}", response.StatusCode, responseBody);
-                throw new InvalidOperationException(friendlyMessage);
-            }
-
-            try
-            {
-                using var doc = JsonDocument.Parse(responseBody);
-                var content = TryExtractPrimaryText(doc.RootElement);
-
-                if (!string.IsNullOrWhiteSpace(content))
-                {
-                    return content.Trim();
-                }
-
-                var incompleteMessage = TrySummarizeIncompleteResponse(
-                    doc.RootElement,
-                    failureContext,
-                    out var hitOutputTokenLimit);
-
-                if (!string.IsNullOrWhiteSpace(incompleteMessage))
-                {
-                    if (hitOutputTokenLimit)
-                    {
-                        var nextLimit = CalculateNextTokenLimit(attemptTokens);
-                        if (nextLimit > attemptTokens)
-                        {
-                            SetMaxOutputTokens(nextLimit);
-                            attemptTokens = _maxOutputTokens;
-                            _logger.LogInformation(
-                                "Retrying {Context} with increased max output tokens {Tokens} after truncated response.",
-                                failureContext,
-                                attemptTokens);
-                            continue;
-                        }
-
-                        return BuildMaxTokenLimitMessage(failureContext, attemptTokens);
-                    }
-
-                    return incompleteMessage.Trim();
-                }
-
-                throw new InvalidOperationException($"OpenAI response did not contain {failureContext} content.");
-            }
-            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
-            {
-                _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
-                throw new OpenAiResponseParseException(failureContext, responseBody, ex);
-            }
+            _logger.LogError("OpenAI API returned {Status}: {Body}", response.StatusCode, responseBody);
+            throw new InvalidOperationException(friendlyMessage);
         }
-    }
 
-    private string BuildFactCheckPrompt(
-        string buildingName,
-        string? buildingAddress,
-        string story,
-        string? facts)
-    {
-        var builder = new StringBuilder();
-        var resolvedName = ResolveBuildingName(buildingName, buildingAddress);
-        var resolvedAddress = ResolveAddress(buildingAddress);
-        var resolvedFacts = FormatFactsList(facts);
-
-        builder.AppendLine($"You are fact-checking a guided tour story about {resolvedName} at {resolvedAddress}.");
-        builder.AppendLine("Use only the verified facts list to assess accuracy. Do not rely on outside knowledge.");
-        builder.AppendLine("If the facts list indicates no verified facts were provided, set overall_verdict to \"insufficient_data\" and leave warnings empty.");
-        builder.AppendLine("Otherwise, flag every mismatch or unsupported embellishment as a warning with a clear recommendation.");
-        builder.AppendLine("Summaries must be one sentence that states the verdict and guidance for the guide.");
-        builder.AppendLine("Return JSON that exactly matches the provided response schema.");
-        builder.AppendLine();
-        builder.AppendLine("Verified facts:");
-        builder.AppendLine(resolvedFacts);
-        builder.AppendLine();
-        builder.AppendLine("Story to review:");
-        builder.AppendLine(story.Trim());
-
-        return builder.ToString().Trim();
-    }
-
-    private static StoryFactCheckResult ParseFactCheckResult(string json)
-    {
         try
         {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object)
+            using var doc = JsonDocument.Parse(responseBody);
+            var content = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString();
+
+            if (string.IsNullOrWhiteSpace(content))
             {
-                throw new InvalidOperationException("Fact-check response was not a JSON object.");
+                throw new InvalidOperationException($"OpenAI response did not contain {failureContext} content.");
             }
 
-            var verdict = root.TryGetProperty("overall_verdict", out var verdictElement)
-                && verdictElement.ValueKind == JsonValueKind.String
-                    ? verdictElement.GetString()
-                    : null;
-
-            var summary = root.TryGetProperty("summary", out var summaryElement)
-                && summaryElement.ValueKind == JsonValueKind.String
-                    ? summaryElement.GetString()
-                    : null;
-
-            var confirmed = new List<string>();
-            if (root.TryGetProperty("confirmed_facts", out var confirmedElement)
-                && confirmedElement.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in confirmedElement.EnumerateArray())
-                {
-                    if (item.ValueKind == JsonValueKind.String)
-                    {
-                        var text = item.GetString();
-                        if (!string.IsNullOrWhiteSpace(text))
-                        {
-                            confirmed.Add(text.Trim());
-                        }
-                    }
-                }
-            }
-
-            var warnings = new List<FactCheckWarning>();
-            if (root.TryGetProperty("warnings", out var warningsElement)
-                && warningsElement.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in warningsElement.EnumerateArray())
-                {
-                    if (item.ValueKind != JsonValueKind.Object)
-                    {
-                        continue;
-                    }
-
-                    var claim = item.TryGetProperty("claim", out var claimElement)
-                        && claimElement.ValueKind == JsonValueKind.String
-                            ? claimElement.GetString()
-                            : null;
-
-                    var issue = item.TryGetProperty("issue", out var issueElement)
-                        && issueElement.ValueKind == JsonValueKind.String
-                            ? issueElement.GetString()
-                            : null;
-
-                    var recommendation = item.TryGetProperty("recommendation", out var recommendationElement)
-                        && recommendationElement.ValueKind == JsonValueKind.String
-                            ? recommendationElement.GetString()
-                            : null;
-
-                    if (string.IsNullOrWhiteSpace(claim) && string.IsNullOrWhiteSpace(issue) && string.IsNullOrWhiteSpace(recommendation))
-                    {
-                        continue;
-                    }
-
-                    warnings.Add(new FactCheckWarning(
-                        claim?.Trim() ?? string.Empty,
-                        issue?.Trim() ?? string.Empty,
-                        recommendation?.Trim() ?? string.Empty));
-                }
-            }
-
-            return new StoryFactCheckResult(
-                string.IsNullOrWhiteSpace(verdict) ? "aligned" : verdict.Trim(),
-                summary?.Trim() ?? string.Empty,
-                confirmed,
-                warnings);
+            return content.Trim();
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
-            throw new InvalidOperationException("OpenAI returned fact-check data in an unexpected format.", ex);
+            _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
+            throw new InvalidOperationException($"Failed to parse the {failureContext} response from OpenAI.", ex);
         }
-    }
-
-    private static int ClampOutputTokens(int tokens)
-    {
-        if (tokens < MinimumOutputTokens)
-        {
-            return MinimumOutputTokens;
-        }
-
-        if (tokens > MaximumOutputTokens)
-        {
-            return MaximumOutputTokens;
-        }
-
-        return tokens;
-    }
-
-    private static int CalculateNextTokenLimit(int currentLimit)
-    {
-        if (currentLimit >= MaximumOutputTokens)
-        {
-            return currentLimit;
-        }
-
-        var increased = (int)Math.Ceiling(currentLimit * 1.5);
-        if (increased <= currentLimit)
-        {
-            increased = currentLimit + 200;
-        }
-
-        var minimumStep = currentLimit + 200;
-        if (increased < minimumStep)
-        {
-            increased = minimumStep;
-        }
-
-        return increased > MaximumOutputTokens ? MaximumOutputTokens : increased;
-    }
-
-    private static string BuildMaxTokenLimitMessage(string failureContext, int attemptedTokens)
-    {
-        if (attemptedTokens >= MaximumOutputTokens)
-        {
-            return $"OpenAI truncated the {failureContext} response even after retrying with the maximum {MaximumOutputTokens:N0}-token limit. Try shortening the facts or splitting the request.";
-        }
-
-        return $"OpenAI truncated the {failureContext} response after reaching the {attemptedTokens:N0}-token limit. Please try again.";
     }
 
     private string GetOrThrowApiKey()
@@ -716,244 +333,6 @@ namespace CityTour.Services
         return key;
     }
 
-    private static string? TryExtractPrimaryText(JsonElement root)
-    {
-        var text = TryExtractFromResponsesApi(root);
-        if (!string.IsNullOrWhiteSpace(text))
-        {
-            return text;
-        }
-
-        if (root.ValueKind == JsonValueKind.Object)
-        {
-            if (root.TryGetProperty("response", out var nestedResponse))
-            {
-                text = TryExtractFromResponsesApi(nestedResponse);
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    return text;
-                }
-            }
-
-            if (root.TryGetProperty("data", out var dataElement))
-            {
-                text = ExtractTextFromElement(dataElement);
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    return text;
-                }
-            }
-        }
-
-        if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
-        {
-            var choice = choices[0];
-            if (choice.ValueKind == JsonValueKind.Object)
-            {
-                if (choice.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object && message.TryGetProperty("content", out var messageContent))
-                {
-                    var contentText = ExtractTextFromElement(messageContent);
-                    if (!string.IsNullOrWhiteSpace(contentText))
-                    {
-                        return contentText;
-                    }
-                }
-
-                if (choice.TryGetProperty("text", out var legacyText) && legacyText.ValueKind == JsonValueKind.String)
-                {
-                    var textValue = legacyText.GetString();
-                    if (!string.IsNullOrWhiteSpace(textValue))
-                    {
-                        return textValue;
-                    }
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private static string? TryExtractFromResponsesApi(JsonElement root)
-    {
-        if (root.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        if (root.TryGetProperty("output", out var output) && output.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in output.EnumerateArray())
-            {
-                var text = ExtractTextFromElement(item);
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    return text;
-                }
-            }
-        }
-
-        if (root.TryGetProperty("content", out var contentElement))
-        {
-            var text = ExtractTextFromElement(contentElement);
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-        }
-
-        if (root.TryGetProperty("output_text", out var outputTextElement))
-        {
-            var text = ExtractTextFromElement(outputTextElement);
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-        }
-
-        return null;
-    }
-
-    private static string? ExtractTextFromElement(JsonElement element)
-    {
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.String:
-                return element.GetString();
-            case JsonValueKind.Object:
-            {
-                if (element.TryGetProperty("value", out var valueProperty))
-                {
-                    var valueText = ExtractTextFromElement(valueProperty);
-                    if (!string.IsNullOrWhiteSpace(valueText))
-                    {
-                        return valueText;
-                    }
-                }
-
-                if (element.TryGetProperty("text", out var textProperty))
-                {
-                    var text = ExtractTextFromElement(textProperty);
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        return text;
-                    }
-                }
-
-                if (element.TryGetProperty("content", out var nestedContent))
-                {
-                    var text = ExtractTextFromElement(nestedContent);
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        return text;
-                    }
-                }
-
-                if (element.TryGetProperty("output", out var nestedOutput))
-                {
-                    var text = ExtractTextFromElement(nestedOutput);
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        return text;
-                    }
-                }
-
-                if (element.TryGetProperty("output_text", out var nestedOutputText))
-                {
-                    var text = ExtractTextFromElement(nestedOutputText);
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        return text;
-                    }
-                }
-
-                foreach (var property in element.EnumerateObject())
-                {
-                    if (property.NameEquals("type") || property.NameEquals("role") || property.NameEquals("id"))
-                    {
-                        continue;
-                    }
-
-                    var text = ExtractTextFromElement(property.Value);
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        return text;
-                    }
-                }
-
-                return null;
-            }
-            case JsonValueKind.Array:
-            {
-                var builder = new StringBuilder();
-                foreach (var item in element.EnumerateArray())
-                {
-                    var text = ExtractTextFromElement(item);
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        if (builder.Length > 0)
-                        {
-                            builder.AppendLine();
-                        }
-                        builder.Append(text.Trim());
-                    }
-                }
-
-                return builder.Length > 0 ? builder.ToString() : null;
-            }
-            default:
-                return null;
-        }
-    }
-
-    private static string? TrySummarizeIncompleteResponse(
-        JsonElement root,
-        string failureContext,
-        out bool hitOutputTokenLimit)
-    {
-        hitOutputTokenLimit = false;
-
-        if (root.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        if (!root.TryGetProperty("status", out var statusElement))
-        {
-            return null;
-        }
-
-        var status = statusElement.ValueKind == JsonValueKind.String ? statusElement.GetString() : null;
-        if (!string.Equals(status, "incomplete", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        string? reason = null;
-
-        if (root.TryGetProperty("incomplete_details", out var detailsElement)
-            && detailsElement.ValueKind == JsonValueKind.Object)
-        {
-            if (detailsElement.TryGetProperty("reason", out var reasonElement)
-                && reasonElement.ValueKind == JsonValueKind.String)
-            {
-                reason = reasonElement.GetString();
-            }
-        }
-
-        if (string.Equals(reason, "max_output_tokens", StringComparison.OrdinalIgnoreCase))
-        {
-            hitOutputTokenLimit = true;
-            return $"OpenAI truncated the {failureContext} response after reaching the maximum output token limit.";
-        }
-
-        if (!string.IsNullOrWhiteSpace(reason))
-        {
-            return $"The {failureContext} response from OpenAI was marked incomplete ({reason}). Please try again.";
-        }
-
-        return $"OpenAI returned an incomplete {failureContext} response. Please try again.";
-    }
-
     private static string? TryExtractErrorMessage(string responseBody)
     {
         try
@@ -980,5 +359,4 @@ namespace CityTour.Services
 
         return null;
     }
-}
 }
