@@ -1,12 +1,28 @@
-import { WebSearchTool } from "../tools/types";
+export interface WebSearchTool {
+  searchWeb(
+    query: string,
+    opts?: { recencyDays?: number; max?: number }
+  ): Promise<
+    Array<{
+      title: string;
+      url: string;
+      snippet?: string;
+      publishDateIso?: string | null;
+    }>
+  >;
+  openUrl(url: string): Promise<{ ok: boolean; finalUrl: string; text?: string }>;
+}
+
+type ClaimVerdict = "true" | "false" | "mixed" | "uncertain";
+export type DomainQuality = "high" | "medium" | "low";
 
 export type FactCheckResult = {
   question: string;
-  verdict: "true" | "false" | "mixed" | "uncertain";
+  verdict: ClaimVerdict;
   confidence: number;
   claims: Array<{
     text: string;
-    verdict: "true" | "false" | "mixed" | "uncertain";
+    verdict: ClaimVerdict;
     confidence: number;
     evidence: Array<{
       title: string;
@@ -14,7 +30,7 @@ export type FactCheckResult = {
       publish_date?: string | null;
       access_date: string;
       snippet?: string;
-      domain_quality: "high" | "medium" | "low";
+      domain_quality: DomainQuality;
       why_trustworthy: string;
     }>;
     notes?: string;
@@ -22,425 +38,661 @@ export type FactCheckResult = {
   gaps_or_caveats?: string[];
 };
 
-type EvidenceItem = FactCheckResult["claims"][number]["evidence"][number];
+type Evidence = FactCheckResult["claims"][number]["evidence"][number];
 
-const MONTHS: Record<string, string> = {
-  january: "01",
-  february: "02",
-  march: "03",
-  april: "04",
-  may: "05",
-  june: "06",
-  july: "07",
-  august: "08",
-  september: "09",
-  october: "10",
-  november: "11",
-  december: "12",
+type SearchResultItem = {
+  title: string;
+  url: string;
+  snippet?: string;
+  publishDateIso?: string | null;
 };
 
-const STOP_WORDS = new Set([
-  "is",
-  "was",
-  "the",
-  "und",
-  "and",
-  "for",
-  "with",
-  "von",
-  "der",
-  "die",
-  "das",
-  "in",
-  "im",
-  "an",
-  "auf",
-  "has",
-  "have",
-  "hat",
-  "wurde",
-  "served",
-  "there",
-]);
+type EvaluatedEvidence = {
+  evidence: Evidence;
+  stance: "support" | "refute" | "uncertain";
+  qualityScore: number;
+  matchScore: number;
+  domain: string;
+};
 
-export async function verifyParagraph(input: {
+type VerifyParagraphInput = {
   paragraph: string;
   nowIso?: string;
   minSourcesPerClaim?: number;
   tools: WebSearchTool;
-}): Promise<FactCheckResult> {
-  const paragraph = input.paragraph?.trim?.() ?? "";
-  const nowIso = getViennaNowIso(input.nowIso);
-  const minSources = Math.max(1, input.minSourcesPerClaim ?? 2);
-  const claimTexts = extractClaims(paragraph);
-  const claims: FactCheckResult["claims"] = [];
-  const gaps: string[] = [];
+};
 
-  for (const text of claimTexts) {
-    const queries = buildQueries(text);
-    const recency = inferRecencyWindow(text);
-    const evidence = await collectEvidence(queries, input.tools, nowIso, recency, minSources);
-    const decision = decideVerdict(evidence, minSources);
-    if (evidence.length < minSources) {
-      gaps.push(`Claim "${text}" lacks sufficient independent sources.`);
+const STOP_WORDS = new Set(
+  [
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "if",
+    "then",
+    "because",
+    "while",
+    "with",
+    "into",
+    "onto",
+    "from",
+    "that",
+    "this",
+    "these",
+    "those",
+    "for",
+    "was",
+    "were",
+    "is",
+    "are",
+    "been",
+    "being",
+    "of",
+    "on",
+    "in",
+    "at",
+    "by",
+    "to",
+    "as",
+    "it",
+    "its",
+    "their",
+    "his",
+    "her",
+    "they",
+    "them",
+    "he",
+    "she",
+    "we",
+    "you",
+    "i",
+    "about",
+    "over",
+    "under",
+    "after",
+    "before",
+    "near",
+    "more",
+    "less",
+    "up",
+    "down",
+    "through",
+    "during",
+    "per",
+    "each",
+    "every",
+    "any",
+    "some",
+    "many",
+    "most",
+    "few",
+    "several",
+    "various",
+    "across",
+    "such",
+    "so",
+    "than",
+    "within",
+    "without",
+    "including",
+    "between",
+    "over",
+    "new",
+    "old",
+    "city",
+    "town",
+    "village",
+    "district",
+    "county",
+    "state",
+    "country",
+    "province",
+    "region",
+    "year",
+    "years",
+    "month",
+    "months",
+    "day",
+    "days",
+    "season",
+    "seasons",
+    "century",
+    "centuries",
+    "built",
+    "located",
+    "located",
+    "located",
+    "historic",
+    "historic",
+    "official",
+    "officially",
+    "opened",
+    "opening",
+    "founded",
+    "founded"
+  ].map((w) => w.toLowerCase())
+);
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function stripTrailingPunctuation(value: string): string {
+  return value.replace(/[.,;:!?\s]+$/u, "").trim();
+}
+
+function splitSentenceIntoClaims(sentence: string): string[] {
+  const segments = sentence
+    .split(/(?:,|;|\band\b|\bwhere\b|\bwhich\b)/iu)
+    .map((part) => normalizeWhitespace(part))
+    .filter((part) => part.length > 0);
+  return segments.length > 0 ? segments : [normalizeWhitespace(sentence)];
+}
+
+function dedupeClaims(claims: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const claim of claims) {
+    const key = normalizeWhitespace(claim).toLocaleLowerCase("en");
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(normalizeWhitespace(claim));
     }
-    claims.push({
-      text,
-      verdict: decision.verdict,
-      confidence: decision.confidence,
-      evidence,
-      ...(decision.notes ? { notes: decision.notes } : {}),
-    });
   }
-
-  const overall = aggregateVerdict(claims);
-  const result: FactCheckResult = {
-    question: paragraph,
-    verdict: overall.verdict,
-    confidence: overall.confidence,
-    claims,
-    ...(gaps.length ? { gaps_or_caveats: Array.from(new Set(gaps)) } : {}),
-  };
-  assertFactCheckResult(result);
   return result;
 }
 
-async function collectEvidence(
-  queries: string[],
-  tool: WebSearchTool,
-  nowIso: string,
-  recencyDays: number | undefined,
-  minSources: number
-): Promise<EvidenceItem[]> {
-  const evidence: EvidenceItem[] = [];
-  const seenUrls = new Set<string>();
-  const seenDomains = new Set<string>();
-  for (const query of queries) {
-    let results: Awaited<ReturnType<WebSearchTool["searchWeb"]>> = [];
-    try {
-      results = await tool.searchWeb(query, recencyDays ? { recencyDays, max: 10 } : { max: 10 });
-    } catch {
+export function extractClaims(paragraph: string): string[] {
+  const sanitized = normalizeWhitespace(paragraph);
+  if (!sanitized) {
+    return [];
+  }
+  let sentences = sanitized
+    .split(/(?<=[.!?])\s+/u)
+    .map((part) => normalizeWhitespace(stripTrailingPunctuation(part)))
+    .filter((part) => part.length > 0);
+  if (sentences.length === 0) {
+    sentences = [sanitized];
+  }
+  let claims: string[] = [];
+  for (const sentence of sentences) {
+    const segments = splitSentenceIntoClaims(sentence);
+    for (const segment of segments) {
+      if (segment.length > 0) {
+        claims.push(segment);
+      }
+    }
+  }
+  let normalizedClaims = claims
+    .map((claim) => {
+      const lower = claim.toLowerCase();
+      let adjusted = claim;
+      if (lower.includes("vienna")) {
+        adjusted = adjusted.replace(/Vienna/giu, "Vienna (Wien)");
+      }
+      return normalizeWhitespace(stripTrailingPunctuation(adjusted));
+    })
+    .filter((claim) => claim.length > 0);
+  normalizedClaims = dedupeClaims(normalizedClaims);
+  while (normalizedClaims.length < 4) {
+    const longest = normalizedClaims.reduce(
+      (prev, current) => (current.length > prev.length ? current : prev),
+      ""
+    );
+    if (!longest || longest.length < 20) {
+      break;
+    }
+    const index = normalizedClaims.indexOf(longest);
+    if (index >= 0) {
+      normalizedClaims.splice(index, 1);
+    }
+    const splitPieces = splitSentenceIntoClaims(longest)
+      .map((piece) => normalizeWhitespace(stripTrailingPunctuation(piece)))
+      .filter((piece) => piece.length > 0);
+    normalizedClaims = dedupeClaims([...normalizedClaims, ...splitPieces]);
+  }
+  if (normalizedClaims.length > 12) {
+    normalizedClaims = normalizedClaims.slice(0, 12);
+  }
+  return normalizedClaims;
+}
+
+function getKeywords(claim: string, max = 8): string[] {
+  const clean = claim
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .split(/\s+/u)
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length > 2 && !STOP_WORDS.has(token));
+  const unique: string[] = [];
+  for (const token of clean) {
+    if (!unique.includes(token)) {
+      unique.push(token);
+    }
+  }
+  return unique.slice(0, max);
+}
+
+function applyLocaleVariants(terms: string[]): string[] {
+  const variants = new Set<string>(terms);
+  for (const term of terms) {
+    if (term.includes("vienna")) {
+      variants.add(term.replace(/vienna/giu, "wien"));
+    }
+    if (term.includes("austria")) {
+      variants.add(term.replace(/austria/giu, "österreich"));
+    }
+  }
+  return Array.from(variants);
+}
+
+export function buildQueries(claim: string): string[] {
+  const normalized = normalizeWhitespace(claim);
+  const queries = new Set<string>();
+  if (normalized.length > 0) {
+    queries.add(normalized);
+  }
+  const keywords = getKeywords(normalized);
+  if (keywords.length > 0) {
+    const condensed = keywords.slice(0, 6).join(" ");
+    queries.add(condensed);
+    if (keywords.length > 2) {
+      queries.add(`"${keywords.slice(0, 2).join(" " )}" ${keywords.slice(2, 5).join(" ")}`.trim());
+    }
+  }
+  const variantKeywords = applyLocaleVariants(keywords);
+  if (variantKeywords.length > 0) {
+    queries.add(variantKeywords.slice(0, 5).join(" "));
+  }
+  const uniqueQueries = Array.from(queries).filter((q) => q.length > 0);
+  if (uniqueQueries.length === 0 && normalized.length > 0) {
+    uniqueQueries.push(normalized);
+  }
+  return uniqueQueries.slice(0, 4);
+}
+
+function canonicalizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\/+$/, "");
+    return `${parsed.origin}${path}${parsed.search}`;
+  } catch {
+    return url.trim();
+  }
+}
+
+function hostnameFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+function qualityScoreForDomain(domainQuality: DomainQuality): number {
+  switch (domainQuality) {
+    case "high":
+      return 1;
+    case "medium":
+      return 0.7;
+    default:
+      return 0.4;
+  }
+}
+
+function describeDomain(domain: string): { domain_quality: DomainQuality; why: string } {
+  const normalized = domain.replace(/^www\./u, "");
+  const lower = normalized.toLowerCase();
+  const highPatterns = [
+    ".gv.at",
+    ".gv.",
+    ".gov",
+    ".gob",
+    ".mil",
+    ".admin.ch",
+    ".parliament.",
+    ".bund.",
+    ".statistik",
+    ".ac.",
+    ".edu",
+    ".uni",
+    ".museum",
+    ".int"
+  ];
+  for (const pattern of highPatterns) {
+    if (lower.includes(pattern)) {
+      return { domain_quality: "high", why: "Official or academic domain" };
+    }
+  }
+  const reputableNews = [
+    "orf.at",
+    "derstandard",
+    "diepresse",
+    "kurier",
+    "apa.at",
+    "salzburg24",
+    "tiroler",
+    "wienerzeitung",
+    "zeit.de",
+    "faz.net",
+    "bbc",
+    "reuters",
+    "apnews",
+    "theguardian",
+    "nytimes",
+    "washingtonpost"
+  ];
+  if (reputableNews.some((name) => lower.includes(name))) {
+    return { domain_quality: "high", why: "Established news outlet" };
+  }
+  if (lower.endsWith(".at") || lower.endsWith(".de") || lower.endsWith(".eu")) {
+    return { domain_quality: "medium", why: "Regional information source" };
+  }
+  if (lower.includes("blog") || lower.includes("forum")) {
+    return { domain_quality: "low", why: "User-generated content" };
+  }
+  return { domain_quality: "medium", why: "General web source" };
+}
+
+export function scoreSource(url: string, title?: string): { domain_quality: DomainQuality; why: string } {
+  const domain = hostnameFromUrl(url);
+  const base = describeDomain(domain);
+  if (base.domain_quality === "medium" && title) {
+    const lowerTitle = title.toLowerCase();
+    if (
+      /official|stadt|museum|universit|archive|amt|ministerium|city hall|government|verwaltung/u.test(
+        lowerTitle
+      )
+    ) {
+      return { domain_quality: "high", why: "Officially described content" };
+    }
+  }
+  return base;
+}
+
+function trimSnippet(snippet?: string): string | undefined {
+  if (!snippet) {
+    return undefined;
+  }
+  const clean = normalizeWhitespace(snippet);
+  const words = clean.split(/\s+/u);
+  if (words.length <= 25) {
+    return clean;
+  }
+  return `${words.slice(0, 25).join(" ")}…`;
+}
+
+function computeMatchScore(text: string, keywords: string[]): number {
+  if (!text) {
+    return 0;
+  }
+  if (keywords.length === 0) {
+    return 0;
+  }
+  const normalized = text.toLowerCase();
+  let hits = 0;
+  for (const keyword of keywords) {
+    if (normalized.includes(keyword.toLowerCase())) {
+      hits += 1;
+    }
+  }
+  return hits / keywords.length;
+}
+
+function detectNegation(text: string, keywords: string[]): boolean {
+  const normalized = text.toLowerCase();
+  const negativeTerms = ["not", "no", "false", "fake", "denies", "denied", "never", "myth", "hoax"];
+  for (const keyword of keywords) {
+    const lowered = keyword.toLowerCase();
+    let index = normalized.indexOf(lowered);
+    while (index !== -1) {
+      const window = normalized.slice(Math.max(0, index - 20), index + lowered.length + 20);
+      if (negativeTerms.some((term) => window.includes(term))) {
+        return true;
+      }
+      index = normalized.indexOf(lowered, index + lowered.length);
+    }
+  }
+  return false;
+}
+
+async function fetchTextForUrl(
+  url: string,
+  tools?: WebSearchTool
+): Promise<{ finalUrl: string; text?: string }> {
+  if (!tools) {
+    return { finalUrl: url };
+  }
+  try {
+    const result = await tools.openUrl(url);
+    if (!result.ok) {
+      return { finalUrl: result.finalUrl || url };
+    }
+    return { finalUrl: result.finalUrl || url, text: result.text };
+  } catch {
+    return { finalUrl: url };
+  }
+}
+
+function determineStance(text: string | undefined, keywords: string[]): "support" | "refute" | "uncertain" {
+  if (!text) {
+    return "uncertain";
+  }
+  const score = computeMatchScore(text, keywords);
+  if (score >= 0.6) {
+    return detectNegation(text, keywords) ? "refute" : "support";
+  }
+  if (score >= 0.3) {
+    return detectNegation(text, keywords) ? "refute" : "support";
+  }
+  return "uncertain";
+}
+
+export async function pickEvidence(
+  claim: string,
+  results: SearchResultItem[],
+  options?: { tools?: WebSearchTool; accessDate?: string; minSources?: number; maxSources?: number }
+): Promise<EvaluatedEvidence[]> {
+  const accessDate = options?.accessDate ?? getCurrentViennaIso();
+  const minSources = options?.minSources ?? 2;
+  const maxSources = Math.max(options?.maxSources ?? Math.max(minSources, 4), minSources);
+  const keywords = getKeywords(claim);
+  const aggregated = new Map<string, SearchResultItem>();
+  for (const result of results) {
+    const key = canonicalizeUrl(result.url);
+    if (!aggregated.has(key)) {
+      aggregated.set(key, result);
+    } else {
+      const existing = aggregated.get(key)!;
+      if (!existing.snippet && result.snippet) {
+        aggregated.set(key, { ...existing, snippet: result.snippet });
+      }
+      if (!existing.publishDateIso && result.publishDateIso) {
+        aggregated.set(key, { ...existing, publishDateIso: result.publishDateIso });
+      }
+    }
+  }
+  const evaluated: EvaluatedEvidence[] = [];
+  const candidates: Array<{ item: SearchResultItem; domain: string; score: number; quality: DomainQuality }> = [];
+  for (const item of aggregated.values()) {
+    const domain = hostnameFromUrl(item.url);
+    const { domain_quality } = scoreSource(item.url, item.title);
+    const matchScore = computeMatchScore(item.snippet ?? "", keywords);
+    candidates.push({ item, domain, score: matchScore, quality: domain_quality });
+  }
+  candidates.sort((a, b) => {
+    const qualityWeight = qualityScoreForDomain(b.quality) - qualityScoreForDomain(a.quality);
+    if (qualityWeight !== 0) {
+      return qualityWeight;
+    }
+    return b.score - a.score;
+  });
+  const usedDomains = new Set<string>();
+  for (const candidate of candidates) {
+    if (evaluated.length >= maxSources) {
+      break;
+    }
+    if (usedDomains.has(candidate.domain) && evaluated.length < minSources) {
       continue;
     }
-    for (const item of results) {
-      if (!item || typeof item.url !== "string") {
+    const snippet = trimSnippet(candidate.item.snippet);
+    let textForAnalysis = snippet;
+    let finalUrl = candidate.item.url;
+    if ((!textForAnalysis || computeMatchScore(textForAnalysis, keywords) < 0.4) && options?.tools) {
+      const fetched = await fetchTextForUrl(candidate.item.url, options.tools);
+      finalUrl = fetched.finalUrl || candidate.item.url;
+      textForAnalysis = fetched.text ? normalizeWhitespace(fetched.text).slice(0, 2000) : textForAnalysis;
+    }
+    const { domain_quality, why } = scoreSource(finalUrl, candidate.item.title);
+    const stance = determineStance(textForAnalysis, keywords);
+    const evidence: Evidence = {
+      title: candidate.item.title,
+      url: finalUrl,
+      publish_date: candidate.item.publishDateIso ?? undefined,
+      access_date: accessDate,
+      snippet: snippet,
+      domain_quality,
+      why_trustworthy: why
+    };
+    evaluated.push({
+      evidence,
+      stance,
+      qualityScore: qualityScoreForDomain(domain_quality),
+      matchScore: computeMatchScore(textForAnalysis ?? "", keywords),
+      domain: hostnameFromUrl(finalUrl)
+    });
+    usedDomains.add(candidate.domain);
+    usedDomains.add(hostnameFromUrl(finalUrl));
+  }
+  if (evaluated.length < minSources) {
+    for (const candidate of candidates) {
+      if (evaluated.length >= Math.min(maxSources, candidates.length)) {
+        break;
+      }
+      if (evaluated.some((item) => canonicalizeUrl(item.evidence.url) === canonicalizeUrl(candidate.item.url))) {
         continue;
       }
-      const url = sanitizeUrl(item.url);
-      if (!url || seenUrls.has(url)) {
-        continue;
-      }
-      const domain = extractHostname(url);
-      if (domain && seenDomains.has(domain) && evidence.length < minSources) {
-        continue;
-      }
-      const score = scoreSource(url, item.title);
-      evidence.push({
-        title: typeof item.title === "string" && item.title.trim() ? item.title.trim() : url,
-        url,
-        publish_date: sanitizeIsoDate(item.publishDateIso),
-        access_date: nowIso,
-        snippet: item.snippet ? trimToWords(item.snippet, 25) : undefined,
-        domain_quality: score.domain_quality,
-        why_trustworthy: score.why,
+      const snippet = trimSnippet(candidate.item.snippet);
+      const { domain_quality, why } = scoreSource(candidate.item.url, candidate.item.title);
+      const stance = determineStance(snippet, keywords);
+      const evidence: Evidence = {
+        title: candidate.item.title,
+        url: candidate.item.url,
+        publish_date: candidate.item.publishDateIso ?? undefined,
+        access_date: accessDate,
+        snippet,
+        domain_quality,
+        why_trustworthy: why
+      };
+      evaluated.push({
+        evidence,
+        stance,
+        qualityScore: qualityScoreForDomain(domain_quality),
+        matchScore: computeMatchScore(snippet ?? "", keywords),
+        domain: hostnameFromUrl(candidate.item.url)
       });
-      seenUrls.add(url);
-      if (domain) {
-        seenDomains.add(domain);
-      }
-      if (evidence.length >= Math.max(minSources * 2, minSources + 2)) {
+      if (evaluated.length >= minSources) {
         break;
       }
     }
-    if (evidence.length >= Math.max(minSources * 2, minSources + 2)) {
-      break;
-    }
   }
-  evidence.sort((a, b) => domainRank(b.domain_quality) - domainRank(a.domain_quality));
-  return evidence;
+  return evaluated.slice(0, maxSources);
 }
 
-function extractClaims(paragraph: string): string[] {
-  const clean = paragraph.replace(/\s+/g, " ").trim();
-  if (!clean) {
-    return [];
-  }
-  const sentences = clean.split(/[.!?;]+/).map((s) => s.trim()).filter(Boolean);
-  const claims: string[] = [];
-  const seen = new Set<string>();
-  let anchorAddress: string | undefined;
-  let anchorSubject: string | undefined;
-
-  const push = (raw: string) => {
-    const normalized = normalizeClaim(raw);
-    if (!normalized) {
-      return;
-    }
-    const key = normalized.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      claims.push(normalized);
-    }
-  };
-
-  for (const sentence of sentences) {
-    const parts = sentence
-      .split(/\b(?:and|und|aber|but|sowie|,|while)\b/i)
-      .map((piece) => piece.trim())
-      .filter(Boolean);
-    anchorSubject = detectSubject(sentence) ?? anchorSubject ?? anchorAddress;
-
-    for (const fragment of parts) {
-      let candidate = fragment;
-      if (anchorSubject && !detectSubject(candidate)) {
-        candidate = `${anchorSubject} ${candidate}`;
-      }
-      if (anchorAddress) {
-        candidate = candidate.replace(/\b(lived|stayed|worked|resided|remained) there\b/gi, (_m, verb) => `${verb} at ${anchorAddress}`);
-        candidate = candidate.replace(/\bthere\b/gi, anchorAddress);
-      }
-      push(candidate);
-      const candidateSubject = detectSubject(candidate);
-      if (candidateSubject) {
-        anchorSubject = candidateSubject;
-      }
-      const address = detectAddress(candidate);
-      if (address) {
-        anchorAddress = address;
-        anchorSubject = anchorSubject ?? address;
-      }
-      const subject = candidateSubject ?? address ?? anchorSubject;
-      const year = candidate.match(/\b(1[6-9]\d{2}|20\d{2})\b/);
-      if (address && /district/i.test(candidate) && /vienna|wien/i.test(candidate)) {
-        push(`${address} is located in Vienna`);
-        const descriptor = extractDistrictDescriptor(candidate);
-        if (descriptor) {
-          push(`${address} is part of Vienna's ${descriptor}`);
-        }
-      }
-      if (address && /served as/i.test(candidate) && /hospital/i.test(candidate)) {
-        push(`The Rothschild Hospital was located at ${address}`);
-      }
-      if (subject && year && /(completed|built|opened|construction|established)/i.test(candidate)) {
-        push(`The completion year of ${subject} was ${year[0]}`);
-      }
-      const lived = candidate.match(/lived at (.+)$/i);
-      if (subject && lived) {
-        push(`${subject} resided at ${lived[1]}`);
-      }
-    }
-  }
-
-  for (const claim of [...claims]) {
-    if (claims.length >= 4) {
-      break;
-    }
-    const extra = paraphraseClaim(claim);
-    if (extra) {
-      push(extra);
-    }
-  }
-
-  if (claims.length < 4 && anchorAddress) {
-    push(`${anchorAddress} is associated with Vienna`);
-  }
-
-  return claims.slice(0, 12);
-}
-
-function paraphraseClaim(claim: string): string | undefined {
-  const completion = claim.match(/^(.+?) was completed in (\d{4})$/i);
-  if (completion) {
-    return `The completion year of ${completion[1]} was ${completion[2]}`;
-  }
-  const served = claim.match(/^(.+?) served as (.+)$/i);
-  if (served) {
-    const address = detectAddress(served[1]) ?? served[1];
-    return `The ${served[2]} was located at ${address}`;
-  }
-  const lived = claim.match(/^(.+?) lived at (.+)$/i);
-  if (lived) {
-    return `${lived[1]} resided at ${lived[2]}`;
-  }
-  const located = claim.match(/^(.+?) is in (.+)$/i);
-  if (located) {
-    return `${located[1]} is located in ${located[2]}`;
-  }
-  return undefined;
-}
-
-function buildQueries(claim: string): string[] {
-  const queries: string[] = [];
-  const add = (value?: string) => {
-    const trimmed = value?.trim();
-    if (trimmed && !queries.includes(trimmed)) {
-      queries.push(trimmed);
-    }
-  };
-
-  const normalized = claim.trim();
-  const address = detectAddress(normalized);
-  const keywords = extractKeywords(normalized).filter((word) => !STOP_WORDS.has(word.toLowerCase()));
-  add(keywords.slice(0, 7).join(" "));
-  add(normalized);
-  if (address) {
-    add(address);
-  }
-  if (address && /vienna|wien/i.test(normalized)) {
-    add(`${address} district Vienna`);
-  }
-  if (address && /district/i.test(normalized) && /vienna|wien/i.test(normalized)) {
-    add(`${address} Bezirk Wien`);
-  }
-  const person = detectPrimaryPerson(normalized);
-  if (person && address) {
-    if (/(?:lived|resided|stayed|wohnte)/i.test(normalized)) {
-      add(`${person} ${address} plaque`);
-      add(`${person} ${address} residence`);
-    } else {
-      add(`${person} ${address}`);
-    }
-  }
-  add(germanize(keywords.length ? keywords.join(" ") : normalized));
-  const year = normalized.match(/\b(1[6-9]\d{2}|20\d{2})\b/);
-  if (address && year) {
-    add(`${address} ${year[0]} Fertigstellung`);
-  }
-  if (queries.length < 2 && address) {
-    add(`${address} Vienna`);
-  }
-  if (queries.length < 2 && keywords.length >= 2) {
-    add(keywords.slice(0, 2).join(" "));
-  }
-  return queries.slice(0, 4);
-}
-
-function scoreSource(url: string, title?: string): { domain_quality: "high" | "medium" | "low"; why: string } {
-  const host = extractHostname(url)?.toLowerCase() ?? "";
-  if (/\.gv\.at$/.test(host) || /\.gv\./.test(host) || /\.gov(\.|$)/.test(host)) {
-    return { domain_quality: "high", why: "Official government publication" };
-  }
-  if (/\.ac\./.test(host) || /\.edu(\.|$)/.test(host)) {
-    return { domain_quality: "high", why: "Academic or educational institution" };
-  }
-  if (/(museum|archive|library)/.test(host)) {
-    return { domain_quality: "high", why: "Cultural institution source" };
-  }
-  if (/wikipedia\.org$/.test(host)) {
-    return { domain_quality: "medium", why: "Community-edited reference" };
-  }
-  if (/(blogspot|wordpress|medium\.com)/.test(host) || /\.blog$/.test(host)) {
-    return { domain_quality: "low", why: "Self-published platform" };
-  }
-  if (/news|zeitung|press/.test(host)) {
-    return { domain_quality: "medium", why: "Press outlet" };
-  }
-  if (/\.at$/.test(host) && title && /stadt|amt|regierung|universit|museum/i.test(title)) {
-    return { domain_quality: "high", why: "Regional authoritative coverage" };
-  }
-  return { domain_quality: "medium", why: "Identifiable publisher" };
-}
-
-function trimToWords(text: string, maxWords: number): string {
-  const words = text.replace(/\s+/g, " ").trim().split(" ");
-  if (words.length <= maxWords) {
-    return words.join(" ");
-  }
-  return words.slice(0, maxWords).join(" ") + "…";
-}
-
-function decideVerdict(evidence: EvidenceItem[], minSources: number): {
-  verdict: FactCheckResult["verdict"];
-  confidence: number;
-  notes?: string;
-} {
-  if (!evidence.length) {
-    return { verdict: "uncertain", confidence: 0.2, notes: "No supporting sources found." };
-  }
-  const conflicts = evidence.filter((item) => indicatesConflict(item.snippet));
-  const hasConflict = conflicts.length > 0;
-  const support = evidence.length - conflicts.length;
-  const highPrimary = evidence.length === 1 && evidence[0].domain_quality === "high";
-  let verdict: FactCheckResult["verdict"];
-  if (hasConflict && support > 0) {
-    verdict = "mixed";
-  } else if (hasConflict && support === 0) {
-    verdict = "false";
-  } else if (evidence.length >= minSources || highPrimary) {
+export function decideVerdict(
+  evidences: EvaluatedEvidence[],
+  minSources: number
+): { verdict: ClaimVerdict; confidence: number; notes?: string } {
+  const support = evidences.filter((item) => item.stance === "support");
+  const refute = evidences.filter((item) => item.stance === "refute");
+  const supportScore = support.reduce((sum, item) => sum + item.qualityScore, 0);
+  const refuteScore = refute.reduce((sum, item) => sum + item.qualityScore, 0);
+  const totalEvidence = evidences.filter((item) => item.stance !== "uncertain");
+  let verdict: ClaimVerdict = "uncertain";
+  let notes: string | undefined;
+  if (support.length >= minSources && refute.length === 0) {
     verdict = "true";
+  } else if (refute.length >= minSources && support.length === 0) {
+    verdict = "false";
+  } else if (support.length > 0 && refute.length > 0) {
+    verdict = "mixed";
+    notes = "Conflicting reputable sources";
+  } else if (support.length === 0 && refute.length === 0) {
+    verdict = "uncertain";
+  } else if (supportScore > refuteScore && support.length >= minSources) {
+    verdict = "true";
+  } else if (refuteScore > supportScore && refute.length >= minSources) {
+    verdict = "false";
   } else {
     verdict = "uncertain";
   }
-  const qualitySum = evidence.reduce((sum, item) => sum + qualityWeight(item.domain_quality), 0);
-  let confidence = Math.min(0.95, 0.15 + qualitySum);
+  if (verdict === "true" && support.length < minSources) {
+    verdict = "uncertain";
+    notes = "Not enough independent confirmation";
+  }
+  if (verdict === "false" && refute.length < minSources) {
+    verdict = "uncertain";
+    notes = "Not enough independent contradiction";
+  }
+  let confidence = 0;
+  if (totalEvidence.length > 0) {
+    confidence = Math.min(0.9, 0.25 + totalEvidence.length * 0.15);
+    const avgQuality =
+      totalEvidence.reduce((sum, item) => sum + item.qualityScore, 0) /
+      totalEvidence.length;
+    confidence *= 0.6 + 0.4 * avgQuality;
+  } else {
+    confidence = 0.1;
+  }
   if (verdict === "uncertain") {
-    confidence = Math.min(confidence, 0.45);
+    confidence = Math.min(confidence, 0.35);
   }
   if (verdict === "mixed") {
-    confidence = Math.min(confidence, 0.6);
+    confidence = Math.min(confidence, 0.55);
   }
-  if (verdict === "false") {
-    confidence = Math.min(confidence, 0.7);
-  }
-  if (evidence.length < minSources && verdict === "true") {
-    confidence = Math.min(confidence, highPrimary ? 0.5 : 0.4);
-  }
-  confidence = clampConfidence(confidence);
-  let notes: string | undefined;
-  if (hasConflict) {
-    notes = "Sources provide conflicting statements.";
-  } else if (verdict === "uncertain") {
-    notes = "Insufficient independent coverage located.";
-  }
-  return { verdict, confidence, ...(notes ? { notes } : {}) };
+  confidence = Math.max(0, Math.min(1, confidence));
+  return { verdict, confidence, notes };
 }
 
-function aggregateVerdict(claims: FactCheckResult["claims"]): {
-  verdict: FactCheckResult["verdict"];
-  confidence: number;
-} {
-  if (!claims.length) {
+export function aggregateVerdict(
+  claims: Array<{ verdict: ClaimVerdict; confidence: number }>
+): { verdict: ClaimVerdict; confidence: number } {
+  if (claims.length === 0) {
     return { verdict: "uncertain", confidence: 0 };
   }
-  let total = 0;
-  let score = 0;
-  let hasMixed = false;
-  for (const claim of claims) {
-    total += claim.confidence;
-    score += verdictScore(claim.verdict) * claim.confidence;
-    if (claim.verdict === "mixed") {
-      hasMixed = true;
-    }
-  }
-  if (total === 0) {
+  const totalConfidence = claims.reduce((sum, claim) => sum + claim.confidence, 0);
+  if (totalConfidence === 0) {
     return { verdict: "uncertain", confidence: 0 };
   }
-  const normalized = score / total;
-  let verdict: FactCheckResult["verdict"];
-  if (normalized >= 0.4) {
+  const verdictWeights: Record<ClaimVerdict, number> = {
+    true: 1,
+    false: -1,
+    mixed: 0,
+    uncertain: 0
+  };
+  const score =
+    claims.reduce((sum, claim) => sum + claim.confidence * verdictWeights[claim.verdict], 0) /
+    totalConfidence;
+  const hasMixed = claims.some((claim) => claim.verdict === "mixed");
+  let verdict: ClaimVerdict;
+  if (score > 0.5) {
     verdict = "true";
-  } else if (normalized <= -0.4) {
+  } else if (score < -0.5) {
     verdict = "false";
   } else if (hasMixed) {
     verdict = "mixed";
   } else {
     verdict = "uncertain";
   }
-  let confidence = Math.min(1, Math.abs(normalized) * 0.6 + (total / claims.length) * 0.7);
-  if (verdict === "mixed") {
-    confidence = Math.min(confidence, 0.6);
-  }
-  if (verdict === "uncertain") {
-    confidence = Math.min(confidence, 0.5);
-  }
-  return { verdict, confidence: clampConfidence(confidence) };
+  const averageConfidence = totalConfidence / claims.length;
+  const finalConfidence = Math.min(0.95, Math.max(0.05, Math.abs(score) * 0.5 + averageConfidence * 0.7));
+  return { verdict, confidence: finalConfidence };
 }
 
-function getViennaNowIso(nowIso?: string): string {
-  let base = nowIso ? new Date(nowIso) : new Date();
-  if (Number.isNaN(base.getTime())) {
-    base = new Date();
-  }
+function getCurrentViennaIso(): string {
+  const now = new Date();
   const formatter = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Vienna",
     year: "numeric",
@@ -449,303 +701,163 @@ function getViennaNowIso(nowIso?: string): string {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
-    timeZoneName: "shortOffset",
+    hourCycle: "h23"
   });
-  const parts = new Map(formatter.formatToParts(base).map((p) => [p.type, p.value] as const));
-  const year = parts.get("year");
-  const month = parts.get("month");
-  const day = parts.get("day");
-  const hour = parts.get("hour") ?? "00";
-  const minute = parts.get("minute") ?? "00";
-  const second = parts.get("second") ?? "00";
-  const zone = parts.get("timeZoneName");
-  if (!year || !month || !day) {
-    return base.toISOString();
-  }
-  let offset = "+00:00";
-  if (zone) {
-    const match = zone.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/i);
-    if (match) {
-      const sign = match[1];
-      const hours = match[2].padStart(2, "0");
-      const minutes = (match[3] ?? "00").padStart(2, "0");
-      offset = `${sign}${hours}:${minutes}`;
-    }
-  }
-  return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset}`;
-}
-
-function inferRecencyWindow(claim: string): number | undefined {
-  const lower = claim.toLowerCase();
-  if (/(today|currently|now|recently)/.test(lower)) {
-    return 30;
-  }
-  const yearMatch = claim.match(/\b(20\d{2})\b/);
-  if (yearMatch) {
-    const year = Number(yearMatch[1]);
-    if (new Date().getUTCFullYear() - year <= 2) {
-      return 365;
-    }
-  }
-  return undefined;
-}
-
-function sanitizeIsoDate(value: unknown): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function sanitizeUrl(url: string): string | undefined {
-  try {
-    const parsed = new URL(url);
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return undefined;
-  }
-}
-
-function extractHostname(url: string): string | undefined {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return undefined;
-  }
-}
-
-function detectAddress(text: string): string | undefined {
-  const match = text.match(/\b[\p{L}][\p{L}\s.'\-]*\s+\d+[a-zA-Z]?\b/u);
-  return match ? match[0].replace(/\s+/g, " ").trim() : undefined;
-}
-
-function detectSubject(text: string): string | undefined {
-  const match = text.match(/^([\p{L}\d][\p{L}\d\s.'\-]*?)\s+(?:is|was|served|became|remained|functioned|lived)/iu);
-  return match ? match[1].trim() : undefined;
-}
-
-function extractDistrictDescriptor(text: string): string | undefined {
-  const viennaMatch = text.match(/vienna['’]s\s+([^.,;]+?district)/i);
-  if (viennaMatch && viennaMatch[1]) {
-    return collapseWhitespace(viennaMatch[1]);
-  }
-  const ordinalMatch = text.match(/\b(\d{1,2}(?:st|nd|rd|th))\s+district\b/i);
-  if (ordinalMatch && ordinalMatch[1]) {
-    return `${ordinalMatch[1]} district`;
-  }
-  const bezirkMatch = text.match(/\b(\d{1,2})\.?\s*Bezirk\b/i);
-  if (bezirkMatch && bezirkMatch[1]) {
-    return `${toOrdinal(Number(bezirkMatch[1]))} district`;
-  }
-  return undefined;
-}
-
-function collapseWhitespace(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function toOrdinal(n: number): string {
-  const abs = Math.abs(n);
-  const mod100 = abs % 100;
-  if (mod100 >= 11 && mod100 <= 13) {
-    return `${n}th`;
-  }
-  switch (abs % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
-}
-
-function detectPrimaryPerson(text: string): string | undefined {
-  const matches = text.match(/\b[A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)*\b/gu);
-  if (!matches) {
-    return undefined;
-  }
-  for (const match of matches) {
-    if (/ungargasse|vienna|wien|district|hospital|rothschild/i.test(match)) {
-      continue;
-    }
-    return match;
-  }
-  return undefined;
-}
-
-function germanize(text: string): string | undefined {
-  const replacements: Record<string, string> = {
-    vienna: "Wien",
-    district: "Bezirk",
-    hospital: "Krankenhaus",
-    lived: "wohnte",
-    residence: "Wohnsitz",
-    museum: "Museum",
-    street: "Straße",
-  };
-  const words = text.split(/\s+/);
-  let changed = false;
-  const translated = words.map((word) => {
-    const lower = word.toLowerCase();
-    if (replacements[lower]) {
-      changed = true;
-      const replacement = replacements[lower];
-      if (word && word[0] === word[0].toUpperCase()) {
-        return replacement.charAt(0).toUpperCase() + replacement.slice(1);
-      }
-      return replacement;
-    }
-    if (lower === "3rd") {
-      changed = true;
-      return "3.";
-    }
-    return word;
+  const parts = formatter.formatToParts(now);
+  const part = Object.fromEntries(parts.map((entry) => [entry.type, entry.value]));
+  const date = `${part.year}-${part.month}-${part.day}`;
+  const time = `${part.hour}:${part.minute}:${part.second}`;
+  const offsetFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Vienna",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "shortOffset"
   });
-  if (!changed) {
-    return undefined;
+  const offsetPart = offsetFormatter
+    .formatToParts(now)
+    .find((entry) => entry.type === "timeZoneName")?.value;
+  let offset = offsetPart ? offsetPart.replace("GMT", "").replace("UTC", "") : "+00:00";
+  if (!offset || offset === "") {
+    offset = "+00:00";
   }
-  return translated.join(" ");
+  return `${date}T${time}${offset}`;
 }
 
-function qualityWeight(quality: EvidenceItem["domain_quality"]): number {
-  switch (quality) {
-    case "high":
-      return 0.35;
-    case "medium":
-      return 0.2;
-    case "low":
-    default:
-      return 0.1;
+function assertFactCheckResult(result: FactCheckResult): asserts result is FactCheckResult {
+  if (!result || typeof result !== "object") {
+    throw new Error("Invalid result");
   }
-}
-
-function domainRank(quality: EvidenceItem["domain_quality"]): number {
-  switch (quality) {
-    case "high":
-      return 3;
-    case "medium":
-      return 2;
-    case "low":
-    default:
-      return 1;
+  if (typeof result.question !== "string") {
+    throw new Error("Missing question");
   }
-}
-
-function verdictScore(verdict: FactCheckResult["verdict"]): number {
-  switch (verdict) {
-    case "true":
-      return 1;
-    case "false":
-      return -1;
-    default:
-      return 0;
+  const validVerdicts: ClaimVerdict[] = ["true", "false", "mixed", "uncertain"];
+  const validDomainQualities: DomainQuality[] = ["high", "medium", "low"];
+  if (!validVerdicts.includes(result.verdict)) {
+    throw new Error("Invalid verdict");
   }
-}
-
-function clampConfidence(value: number): number {
-  return Number(Math.min(1, Math.max(0, value)).toFixed(2));
-}
-
-function isVerdict(value: unknown): value is FactCheckResult["verdict"] {
-  return value === "true" || value === "false" || value === "mixed" || value === "uncertain";
-}
-
-function isConfidence(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
-}
-
-function indicatesConflict(snippet?: string): boolean {
-  if (!snippet) {
-    return false;
-  }
-  const lower = snippet.toLowerCase();
-  return /not\s+(?:in|at|true|located|confirmed)/.test(lower) || /(no evidence|never occurred|disputed|false claim|kein nachweis|wurde nicht)/.test(lower);
-}
-
-function normalizeClaim(text: string): string {
-  let normalized = text.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
-  normalized = normalized.replace(/[’‘]/g, "'").replace(/[“”]/g, '"');
-  normalized = normalized.replace(/\b([A-Za-z]+)’s\b/g, "$1's");
-  normalized = normalized.replace(/[.,;:]+$/, "");
-  normalized = normalizeDates(normalized);
-  if (!normalized) {
-    return "";
-  }
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-}
-
-function normalizeDates(text: string): string {
-  let normalized = text.replace(/\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/g, (_m, d, m, y) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
-  normalized = normalized.replace(
-    /\b(\d{1,2}) (January|February|March|April|May|June|July|August|September|October|November|December) (\d{4})\b/gi,
-    (_m, day, month, year) => {
-      const key = MONTHS[month.toLowerCase()];
-      return `${year}-${key ?? month}-${String(day).padStart(2, "0")}`;
-    }
-  );
-  return normalized;
-}
-
-function extractKeywords(text: string): string[] {
-  const matches = text.match(/\b[\p{L}0-9][\p{L}0-9'\-]*\b/gu) ?? [];
-  const unique: string[] = [];
-  for (const word of matches) {
-    if (!unique.includes(word)) {
-      unique.push(word);
-    }
-  }
-  return unique;
-}
-
-function assertFactCheckResult(value: unknown): asserts value is FactCheckResult {
-  if (typeof value !== "object" || value === null) {
-    throw new Error("FactCheckResult must be an object");
-  }
-  const result = value as Record<string, unknown>;
-  if (typeof result.question !== "string" || !isVerdict(result.verdict) || !isConfidence(result.confidence)) {
-    throw new Error("FactCheckResult fields invalid");
+  if (
+    typeof result.confidence !== "number" ||
+    Number.isNaN(result.confidence) ||
+    result.confidence < 0 ||
+    result.confidence > 1
+  ) {
+    throw new Error("Invalid confidence");
   }
   if (!Array.isArray(result.claims)) {
-    throw new Error("FactCheckResult.claims must be an array");
+    throw new Error("Claims must be an array");
   }
   for (const claim of result.claims) {
-    if (typeof claim !== "object" || claim === null) {
-      throw new Error("Claim must be object");
+    if (typeof claim.text !== "string" || claim.text.length === 0) {
+      throw new Error("Invalid claim text");
     }
-    const c = claim as Record<string, unknown>;
-    if (typeof c.text !== "string" || !isVerdict(c.verdict) || !isConfidence(c.confidence) || !Array.isArray(c.evidence)) {
-      throw new Error("Claim fields invalid");
+    if (!validVerdicts.includes(claim.verdict)) {
+      throw new Error("Invalid claim verdict");
     }
-    for (const evidence of c.evidence) {
-      if (typeof evidence !== "object" || evidence === null) {
-        throw new Error("Evidence must be object");
+    if (
+      typeof claim.confidence !== "number" ||
+      Number.isNaN(claim.confidence) ||
+      claim.confidence < 0 ||
+      claim.confidence > 1
+    ) {
+      throw new Error("Invalid claim confidence");
+    }
+    if (!Array.isArray(claim.evidence)) {
+      throw new Error("Invalid evidence");
+    }
+    for (const evidence of claim.evidence) {
+      if (typeof evidence.title !== "string" || typeof evidence.url !== "string") {
+        throw new Error("Evidence requires title and url");
       }
-      const e = evidence as Record<string, unknown>;
-      if (
-        typeof e.title !== "string" ||
-        typeof e.url !== "string" ||
-        typeof e.access_date !== "string" ||
-        (e.publish_date !== undefined && e.publish_date !== null && typeof e.publish_date !== "string") ||
-        (e.snippet !== undefined && typeof e.snippet !== "string") ||
-        (e.why_trustworthy !== undefined && typeof e.why_trustworthy !== "string") ||
-        (e.domain_quality !== "high" && e.domain_quality !== "medium" && e.domain_quality !== "low")
-      ) {
-        throw new Error("Evidence fields invalid");
+      if (typeof evidence.access_date !== "string") {
+        throw new Error("Evidence missing access_date");
       }
-    }
-    if (c.notes !== undefined && typeof c.notes !== "string") {
-      throw new Error("Claim notes must be string");
+      if (!validDomainQualities.includes(evidence.domain_quality)) {
+        throw new Error("Evidence missing domain quality");
+      }
+      if (typeof evidence.why_trustworthy !== "string") {
+        throw new Error("Evidence missing why_trustworthy");
+      }
     }
   }
-  if (result.gaps_or_caveats !== undefined) {
-    if (!Array.isArray(result.gaps_or_caveats) || !result.gaps_or_caveats.every((item) => typeof item === "string")) {
-      throw new Error("gaps_or_caveats must be string array");
+  if (result.gaps_or_caveats) {
+    if (!Array.isArray(result.gaps_or_caveats)) {
+      throw new Error("gaps_or_caveats must be array");
     }
   }
+}
+
+export async function verifyParagraph(input: VerifyParagraphInput): Promise<FactCheckResult> {
+  const { paragraph, tools } = input;
+  const minSources = Math.max(1, input.minSourcesPerClaim ?? 2);
+  const nowIso = input.nowIso ?? getCurrentViennaIso();
+  const claimsTexts = extractClaims(paragraph);
+  if (claimsTexts.length === 0) {
+    const result: FactCheckResult = {
+      question: "Is paragraph true?",
+      verdict: "uncertain",
+      confidence: 0.1,
+      claims: [],
+      gaps_or_caveats: ["No verifiable claims found"]
+    };
+    assertFactCheckResult(result);
+    return result;
+  }
+  const claimResults: FactCheckResult["claims"] = [];
+  const caveats: string[] = [];
+  for (const claimText of claimsTexts) {
+    const queries = buildQueries(claimText);
+    const aggregatedResults: SearchResultItem[] = [];
+    const seenUrls = new Set<string>();
+    for (const query of queries) {
+      let searchResults: SearchResultItem[] = [];
+      try {
+        const response = await tools.searchWeb(query, { max: 8 });
+        searchResults = response ?? [];
+      } catch {
+        searchResults = [];
+      }
+      for (const result of searchResults) {
+        const key = canonicalizeUrl(result.url);
+        if (seenUrls.has(key)) {
+          continue;
+        }
+        seenUrls.add(key);
+        aggregatedResults.push(result);
+      }
+    }
+    const evaluated = await pickEvidence(claimText, aggregatedResults, {
+      tools,
+      accessDate: nowIso,
+      minSources,
+      maxSources: Math.max(minSources, 4)
+    });
+    const decision = decideVerdict(evaluated, minSources);
+    const evidence = evaluated.map((item) => item.evidence);
+    const claimResult: FactCheckResult["claims"][number] = {
+      text: claimText,
+      verdict: decision.verdict,
+      confidence: decision.confidence,
+      evidence
+    };
+    if (decision.notes) {
+      claimResult.notes = decision.notes;
+    }
+    if (decision.verdict === "uncertain" && aggregatedResults.length === 0) {
+      caveats.push(`No reliable sources found for claim: ${claimText}`);
+    } else if (decision.verdict === "uncertain" && decision.notes) {
+      caveats.push(`${decision.notes} for claim: ${claimText}`);
+    }
+    claimResults.push(claimResult);
+  }
+  const overall = aggregateVerdict(claimResults.map(({ verdict, confidence }) => ({ verdict, confidence })));
+  const factCheckResult: FactCheckResult = {
+    question: "Is paragraph true?",
+    verdict: overall.verdict,
+    confidence: overall.confidence,
+    claims: claimResults,
+    gaps_or_caveats: caveats.length > 0 ? caveats : undefined
+  };
+  assertFactCheckResult(factCheckResult);
+  return factCheckResult;
 }
