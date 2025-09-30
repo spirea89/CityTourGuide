@@ -471,18 +471,32 @@ public class AiStoryService : IAiStoryService
                     if (string.Equals(type, "output_text", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(type, "text", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (element.TryGetProperty("text", out var typedText) && typedText.ValueKind == JsonValueKind.String)
+                        if (element.TryGetProperty("text", out var typedText))
                         {
-                            AppendText(builder, typedText.GetString());
+                            if (typedText.ValueKind == JsonValueKind.String)
+                            {
+                                AppendText(builder, typedText.GetString());
+                            }
+                            else
+                            {
+                                AppendTextFromElement(typedText, builder);
+                            }
                         }
 
                         break;
                     }
                 }
 
-                if (element.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+                if (element.TryGetProperty("text", out var text))
                 {
-                    AppendText(builder, text.GetString());
+                    if (text.ValueKind == JsonValueKind.String)
+                    {
+                        AppendText(builder, text.GetString());
+                    }
+                    else
+                    {
+                        AppendTextFromElement(text, builder);
+                    }
                 }
 
                 if (element.TryGetProperty("content", out var content))
