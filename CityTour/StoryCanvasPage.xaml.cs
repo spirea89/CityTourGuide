@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -9,6 +10,7 @@ using Microsoft.Maui.Controls;
 using Microsoft.Maui.Media;
 using System.Linq;
 using System.Reflection;
+using Microsoft.Maui.ApplicationModel.DataTransfer;
 
 namespace CityTour;
 
@@ -57,6 +59,7 @@ public partial class StoryCanvasPage : ContentPage
     private const string ChatReadyStatusMessage = "Ask the guide for more details about this address.";
     private const string ChatBusyStatusMessage = "Asking the tour guide…";
     private const string ChatFollowUpStatusMessage = "Ask another follow-up question whenever you're curious.";
+    private string? _lastRawOpenAiResponse;
 
     public StoryCanvasPage(
         string placeId,
@@ -161,6 +164,7 @@ public partial class StoryCanvasPage : ContentPage
             });
 
             await SetStatusAsync($"Story generated with {modelLabel} ({categoryLabel} focus). Feel free to tweak or add your own notes.");
+            UpdateRawResponse(null);
         }
         catch (OperationCanceledException)
         {
@@ -169,6 +173,7 @@ public partial class StoryCanvasPage : ContentPage
         catch (Exception ex)
         {
             await SetStatusAsync($"Could not generate story. {ex.Message}");
+            UpdateRawResponse(GetRawResponse(ex));
 
             if (userInitiated)
             {
@@ -500,6 +505,7 @@ public partial class StoryCanvasPage : ContentPage
         catch (Exception ex)
         {
             await SetChatBusyStateAsync(false, $"Could not ask for more details. {ex.Message}");
+            UpdateRawResponse(GetRawResponse(ex));
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
                 await DisplayAlert("Chat failed", ex.Message, "OK");
@@ -513,6 +519,79 @@ public partial class StoryCanvasPage : ContentPage
             }
 
             cts.Dispose();
+        }
+    }
+
+    private void UpdateRawResponse(string? rawResponse)
+    {
+        _lastRawOpenAiResponse = string.IsNullOrWhiteSpace(rawResponse) ? null : rawResponse;
+        _ = MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            ShowRawResponseButton.IsVisible = _lastRawOpenAiResponse is not null;
+        });
+    }
+
+    private static string? GetRawResponse(Exception? exception)
+    {
+        var current = exception;
+        while (current is not null)
+        {
+            if (current.Data is IDictionary data && data.Contains(AiStoryService.RawResponseDataKey))
+            {
+                var raw = data[AiStoryService.RawResponseDataKey];
+                if (raw is string text && !string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+
+                if (raw is not null)
+                {
+                    var textValue = raw.ToString();
+                    if (!string.IsNullOrWhiteSpace(textValue))
+                    {
+                        return textValue;
+                    }
+                }
+            }
+
+            current = current.InnerException;
+        }
+
+        return null;
+    }
+
+    private async void OnShowRawResponseClicked(object? sender, EventArgs e)
+    {
+        var raw = _lastRawOpenAiResponse;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            ShowRawResponseButton.IsVisible = false;
+            return;
+        }
+
+        var truncated = raw.Length > 4000 ? raw.Substring(0, 4000) + "…" : raw;
+        var copied = false;
+
+        try
+        {
+            await Clipboard.Default.SetTextAsync(raw);
+            copied = true;
+        }
+        catch
+        {
+            // Ignore clipboard failures and fall back to showing the text.
+        }
+
+        if (copied)
+        {
+            await DisplayAlert(
+                "Raw OpenAI response",
+                $"The full response was copied to your clipboard so you can share it when reporting the parsing issue.\n\nPreview:\n{truncated}",
+                "OK");
+        }
+        else
+        {
+            await DisplayAlert("Raw OpenAI response", truncated, "OK");
         }
     }
 
