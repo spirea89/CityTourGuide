@@ -1,11 +1,10 @@
-namespace CityTour
+﻿namespace CityTour;
+
+public partial class App : Application
 {
-    public partial class App : Application
+    public App()
     {
-        public App()
-        {
-            InitializeComponent();
-            MainPage = new AppShell();
-        }
+        InitializeComponent();
+        MainPage = new AppShell();
     }
 }

@@ -6,52 +6,18 @@
     xmlns:models="clr-namespace:CityTour.Models"
     Padding="16">
 
-    <Grid RowSpacing="12">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
 
-        <Grid Grid.Row="0"
-              ColumnDefinitions="*,Auto"
-              ColumnSpacing="8"
-              VerticalOptions="Center">
-            <Label Text="New story"
-                   FontSize="22"
-                   FontAttributes="Bold" />
-            <Button x:Name="PromptInfoButton"
-                    Grid.Column="1"
-                    Text="Story prompt"
-                    FontSize="12"
-                    Padding="12,6"
-                    Clicked="OnPromptInfoClicked"
-                    SemanticProperties.Description="Show the AI prompt that was used to generate this story."
-                    IsEnabled="False" />
-        </Grid>
+        <Label Text="New story"
+               FontSize="22"
+               FontAttributes="Bold" />
 
         <Label x:Name="PromptLabel"
                Grid.Row="1"
                FontSize="13"
                LineBreakMode="WordWrap"
                Margin="0,4,0,0"
-               TextColor="{AppThemeBinding Light=#444, Dark=#DDD}"
-               IsVisible="False" />
+               TextColor="{AppThemeBinding Light=#444, Dark=#DDD}" />
 
         <Label x:Name="BuildingNameLabel"
                Grid.Row="2"
@@ -70,8 +36,7 @@
         </StackLayout>
 
         <StackLayout Grid.Row="4"
-                     Spacing="4"
-                     IsVisible="False">
+                     Spacing="4">
             <Label Text="AI model"
                    FontAttributes="Bold"
                    FontSize="14" />
@@ -81,33 +46,7 @@
                     SelectedIndexChanged="OnModelChanged" />
         </StackLayout>
 
-        <StackLayout Grid.Row="5"
-                     Spacing="4"
-                     IsVisible="False">
-            <Label Text="Max AI response tokens"
-                   FontAttributes="Bold"
-                   FontSize="14" />
-            <Entry x:Name="MaxTokensEntry"
-                   Keyboard="Numeric"
-                   MaxLength="5"
-                   Placeholder="e.g. 900"
-                   ReturnType="Done"
-                   TextChanged="OnMaxTokensEntryTextChanged"
-                   Completed="OnMaxTokensEntryCompleted"
-                   Unfocused="OnMaxTokensEntryUnfocused"
-                   SemanticProperties.Description="Set the maximum number of tokens the AI may use when answering." />
-            <Label x:Name="MaxTokensInfoLabel"
-                   FontSize="12"
-                   LineBreakMode="WordWrap"
-                   TextColor="{AppThemeBinding Light=#555, Dark=#CCC}" />
-            <Label x:Name="MaxTokensErrorLabel"
-                   FontSize="12"
-                   LineBreakMode="WordWrap"
-                   TextColor="{AppThemeBinding Light=#DC2626, Dark=#FCA5A5}"
-                   IsVisible="False" />
-        </StackLayout>
-
-        <Grid Grid.Row="6"
+        <Grid Grid.Row="5"
               ColumnDefinitions="Auto,*"
               ColumnSpacing="8">
             <ActivityIndicator x:Name="LoadingIndicator"
@@ -120,56 +59,17 @@
                    TextColor="{AppThemeBinding Light=#555, Dark=#CCC}" />
         </Grid>
 
-        <Button x:Name="ShowParseResponseButton"
-                Grid.Row="7"
-                Text="Show OpenAI response"
-                SemanticProperties.Description="Show the raw response returned by OpenAI when parsing fails."
-                Clicked="OnShowParseResponseClicked"
-                IsVisible="False" />
-
         <Editor x:Name="StoryEditor"
-                Grid.Row="8"
+                Grid.Row="6"
                 Placeholder="Tweak or add your own notes here..."
                 AutoSize="TextChanges" />
 
-        <VerticalStackLayout Grid.Row="9"
-                              Spacing="8">
-            <Button x:Name="WikipediaButton"
-                    Text="Fetch Wikipedia summary"
-                    Clicked="OnFetchWikipediaClicked"
-                    IsVisible="False" />
-            <Button x:Name="FactCheckButton"
-                    Text="Check story facts"
-                    Clicked="OnFactCheckClicked"
-                    IsEnabled="False"
-                    SemanticProperties.Description="Compare the current story with the verified facts and highlight any discrepancies." />
-            <Grid x:Name="FactCheckStatusGrid"
-                  ColumnDefinitions="Auto,*"
-                  ColumnSpacing="8"
-                  IsVisible="False">
-                <ActivityIndicator x:Name="FactCheckIndicator"
-                                    VerticalOptions="Center"
-                                    IsVisible="False"
-                                    IsRunning="False" />
-                <Label x:Name="FactCheckStatusLabel"
-                       Grid.Column="1"
-                       VerticalOptions="Center"
-                       LineBreakMode="WordWrap"
-                       TextColor="{AppThemeBinding Light=#555, Dark=#CCC}" />
-            </Grid>
-            <Label x:Name="FactCheckIssuesLabel"
-                   FontSize="12"
-                   LineBreakMode="WordWrap"
-                   TextColor="{AppThemeBinding Light=#DC2626, Dark=#FCA5A5}"
-                   IsVisible="False" />
-        </VerticalStackLayout>
-
-        <Label Grid.Row="10"
+        <Label Grid.Row="7"
                Text="Ask about this place"
                FontSize="14"
                FontAttributes="Bold" />
 
-        <Grid Grid.Row="11"
+        <Grid Grid.Row="8"
               ColumnDefinitions="Auto,*"
               ColumnSpacing="8">
             <ActivityIndicator x:Name="ChatLoadingIndicator"
@@ -184,7 +84,7 @@
         </Grid>
 
         <CollectionView x:Name="ChatCollectionView"
-                        Grid.Row="12"
+                        Grid.Row="9"
                         BackgroundColor="Transparent"
                         SelectionMode="None"
                         VerticalScrollBarVisibility="Never">
@@ -223,7 +123,7 @@
             </CollectionView.ItemTemplate>
         </CollectionView>
 
-        <Grid Grid.Row="13"
+        <Grid Grid.Row="10"
               ColumnDefinitions="*,Auto"
               ColumnSpacing="8">
             <Entry x:Name="ChatEntry"
@@ -237,7 +137,7 @@
                     Clicked="OnSendChatClicked" />
         </Grid>
 
-        <StackLayout Grid.Row="14"
+        <StackLayout Grid.Row="11"
                      Spacing="4">
             <Label Text="Voice"
                    FontAttributes="Bold"
@@ -247,7 +147,7 @@
                     ItemDisplayBinding="{Binding DisplayName}" />
         </StackLayout>
 
-        <Grid Grid.Row="15"
+        <Grid Grid.Row="12"
               ColumnDefinitions="*,*"
               ColumnSpacing="8">
             <Button x:Name="ListenButton"
@@ -261,11 +161,11 @@
         </Grid>
 
         <Button x:Name="RegenerateButton"
-                Grid.Row="16"
+                Grid.Row="13"
                 Text="Regenerate story"
                 Clicked="OnRegenerateClicked" />
 
-        <Button Grid.Row="17"
+        <Button Grid.Row="14"
                 Text="Close"
                 Clicked="OnCloseClicked" />
     </Grid>
