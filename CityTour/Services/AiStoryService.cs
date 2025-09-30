@@ -43,6 +43,7 @@ public class AiStoryService : IAiStoryService
     private const string DefaultModel = "gpt-5";
     private const string ModelPreferenceKey = "ai.story.model";
     private const string SystemMessage = "You are a creative, historically knowledgeable city tour guide. Craft short stories and responses about buildings that feel authentic, welcoming, and vivid.";
+    internal const string RawResponseDataKey = "RawOpenAiResponse";
     private const string HistoryPromptTemplate = "You are a meticulous local historian. Using only facts about {address}, write a vivid, chronological ~120–150 word history highlighting founding date, name changes, 2–3 pivotal events, and significance.";
     private const string PersonalitiesPromptTemplate = "You are a culturally savvy guide. From facts on people linked to {address}, craft a ~110–140 word mini-story weaving 2–3 notable figures with full names, dates, roles, and one concrete anecdote each; avoid speculation.";
     private const string ArchitecturePromptTemplate = "You are an architect explaining to curious visitors. Based strictly on facts, describe {address}’s style, architect, era, materials, façade/interior highlights, notable alterations, and 2 street-level details to spot in clear (~120–150 words).";
@@ -283,7 +284,10 @@ public class AiStoryService : IAiStoryService
                 : $"OpenAI API error ({(int)response.StatusCode}): {errorMessage}";
 
             _logger.LogError("OpenAI API returned {Status}: {Body}", response.StatusCode, responseBody);
-            throw new InvalidOperationException(friendlyMessage);
+
+            var exception = new InvalidOperationException(friendlyMessage);
+            exception.Data[RawResponseDataKey] = responseBody;
+            throw exception;
         }
 
         try
@@ -305,7 +309,9 @@ public class AiStoryService : IAiStoryService
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
             _logger.LogError(ex, "Failed to parse OpenAI {Context} response: {Body}", failureContext, responseBody);
-            throw new InvalidOperationException($"Failed to parse the {failureContext} response from OpenAI.", ex);
+            var parseException = new InvalidOperationException($"Failed to parse the {failureContext} response from OpenAI.", ex);
+            parseException.Data[RawResponseDataKey] = responseBody;
+            throw parseException;
         }
     }
 
