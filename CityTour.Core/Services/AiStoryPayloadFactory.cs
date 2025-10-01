@@ -47,7 +47,7 @@ public static class AiStoryPayloadFactory
             payload["temperature"] = temperature;
         }
 
-        payload["max_tokens"] = maxTokens;
+        payload["max_completion_tokens"] = maxTokens;
 
         return payload;
     }
