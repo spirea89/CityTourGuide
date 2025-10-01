@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using CityTour.Core.Services;
 using CityTour.Models;
 using Microsoft.Maui.Storage;
 using Microsoft.Extensions.Logging;
@@ -42,7 +43,7 @@ public class AiStoryService : IAiStoryService
 {
     private const string DefaultModel = "gpt-5";
     private const string ModelPreferenceKey = "ai.story.model";
-    private const string SystemMessage = "You are a creative, historically knowledgeable city tour guide. Craft short stories and responses about buildings that feel authentic, welcoming, and vivid.";
+    private const string SystemMessage = AiStorySystemPrompts.Default;
     internal const string RawResponseDataKey = "RawOpenAiResponse";
     private const string HistoryPromptTemplate = "You are a meticulous local historian. Using only facts about {address}, write a vivid, chronological ~120–150 word history highlighting founding date, name changes, 2–3 pivotal events, and significance.";
     private const string PersonalitiesPromptTemplate = "You are a culturally savvy guide. From facts on people linked to {address}, craft a ~110–140 word mini-story weaving 2–3 notable figures with full names, dates, roles, and one concrete anecdote each; avoid speculation.";
@@ -245,7 +246,7 @@ public class AiStoryService : IAiStoryService
     {
         var key = GetOrThrowApiKey();
 
-        var payload = CreateChatCompletionPayload(_model, prompt, temperature, maxTokens);
+        var payload = AiStoryPayloadFactory.Create(_model, prompt, temperature, maxTokens, SystemMessage);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
@@ -507,35 +508,7 @@ public class AiStoryService : IAiStoryService
     }
 
     internal static JsonObject CreateChatCompletionPayload(string model, string prompt, double temperature, int maxTokens)
-    {
-        var payload = new JsonObject
-        {
-            ["model"] = model,
-            ["messages"] = new JsonArray
-            {
-                new JsonObject { ["role"] = "system", ["content"] = SystemMessage },
-                new JsonObject { ["role"] = "user", ["content"] = prompt }
-            }
-        };
-
-        if (SupportsCustomTemperature(model))
-        {
-            payload["temperature"] = temperature;
-        }
-
-        payload["max_tokens"] = maxTokens;
-
-        return payload;
-    }
-
-    private static bool SupportsCustomTemperature(string model)
-    {
-        // The current GPT-5 family requires the default temperature of 1.0 and rejects
-        // requests that explicitly set a different value. Omitting the field lets the
-        // service fall back to its supported default while still allowing other models
-        // to use tuned temperatures.
-        return !model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
-    }
+        => AiStoryPayloadFactory.Create(model, prompt, temperature, maxTokens, SystemMessage);
 
     private string GetOrThrowApiKey()
     {
