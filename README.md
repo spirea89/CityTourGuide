@@ -100,31 +100,8 @@ periodically cleaned they can easily consume several gigabytes of storage and
 cause build failures like `System.IO.IOException: There is not enough space on
 the disk`.
 
-To reclaim space safely:
-
-1. Close any running IDE instances (Visual Studio, VS Code, Rider, etc.) so
-   they release file handles on the build folders.
-2. Run the cleanup script that ships with this repository:
-
-   ```powershell
-   pwsh ./scripts/clear-build-storage.ps1
-   ```
-
-   The script deletes every `bin/` and `obj/` directory under the solution
-   folder and reports the amount of reclaimed space. You can pass
-   `-IncludeNuGetCache` and `-IncludeWorkloads` switches when additional space is
-   needed to clear the global NuGet cache and unused .NET workloads
-   respectively.
-
-   On macOS or Linux you can instead run the equivalent Bash script:
-
-   ```bash
-   ./scripts/clear-build-storage.sh
-   ```
-
-3. Retry the build. With the temporary outputs removed the project typically
-   rebuilds successfully.
-
-If disk space is still tight, consider moving the repository to a larger drive
-or pointing the `DOTNET_WORKLOAD_CACHE_ROOT` environment variable to a location
-with more free space before reinstalling workloads.
+Follow the step-by-step playbook in
+[`docs/troubleshooting/low-disk-space.md`](docs/troubleshooting/low-disk-space.md)
+to reclaim space safely. It covers how to close running IDEs, run the bundled
+cleanup scripts, optionally purge NuGet/workload caches, and verify free space
+before retrying the build.
