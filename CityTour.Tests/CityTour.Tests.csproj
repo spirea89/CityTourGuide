@@ -12,6 +12,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CityTour\CityTour.csproj" />
+    <ProjectReference Include="..\CityTour.Core\CityTour.Core.csproj" />
   </ItemGroup>
 </Project>
