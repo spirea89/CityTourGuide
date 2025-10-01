@@ -46,7 +46,7 @@
 		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
 
 		<!-- Splash Screen -->
-		<MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#512BD4" BaseSize="128,128" />
+                <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#512BD4" BaseSize="128,128" />
 
 		<!-- Images -->
 		<MauiImage Include="Resources\Images\*" />
@@ -67,13 +67,17 @@
 	  <MauiAsset Include="Raw\places.json" />
 	</ItemGroup>
 
-	<ItemGroup>
-		<PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
-		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.5" />
-		<PackageReference Include="Microsoft.Maui.Controls.Maps" Version="9.0.100" />
-	</ItemGroup>
+        <ItemGroup>
+                <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+                <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.5" />
+                <PackageReference Include="Microsoft.Maui.Controls.Maps" Version="9.0.100" />
+        </ItemGroup>
 
-	<ItemGroup>
+        <ItemGroup>
+          <ProjectReference Include="..\CityTour.Core\CityTour.Core.csproj" />
+        </ItemGroup>
+
+        <ItemGroup>
           <Compile Update="StoryCanvasPage.xaml.cs">
             <DependentUpon>StoryCanvasPage.xaml</DependentUpon>
 	  </Compile>
@@ -96,5 +100,24 @@
 	    <Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
 	</ItemGroup>
+
+        <Target Name="EnsureSplashResizetizerDirectories" BeforeTargets="PrepareForBuild" Condition="'@(MauiSplashScreen)' != ''">
+          <ItemGroup>
+            <_SplashScreens Include="@(MauiSplashScreen)">
+              <ShortName Condition="$([System.String]::Copy('%(Filename)')).Length &gt;= 2">$([System.String]::Copy('%(Filename)').Substring(0, 2))</ShortName>
+            </_SplashScreens>
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-mdpi')" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-hdpi')" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xhdpi')" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xxhdpi')" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xxxhdpi')" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(_SplashScreens.ShortName)\\drawable-mdpi')" Condition="'%(_SplashScreens.ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(_SplashScreens.ShortName)\\drawable-hdpi')" Condition="'%(_SplashScreens.ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(_SplashScreens.ShortName)\\drawable-xhdpi')" Condition="'%(_SplashScreens.ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(_SplashScreens.ShortName)\\drawable-xxhdpi')" Condition="'%(_SplashScreens.ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(_SplashScreens.ShortName)\\drawable-xxxhdpi')" Condition="'%(_SplashScreens.ShortName)' != ''" />
+          </ItemGroup>
+          <MakeDir Directories="@(_SplashDirectories)" />
+        </Target>
 
 </Project>
