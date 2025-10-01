@@ -11,8 +11,8 @@ public class AiStoryServiceTests
     {
         var payload = AiStoryPayloadFactory.Create("gpt-5", "prompt", 0.5, 42);
 
-        Assert.True(payload.TryGetPropertyValue("max_tokens", out var maxTokens));
+        Assert.True(payload.TryGetPropertyValue("max_completion_tokens", out var maxTokens));
         Assert.Equal(42, maxTokens!.GetValue<int>());
-        Assert.False(payload.ContainsKey("max_completion_tokens"));
+        Assert.False(payload.ContainsKey("max_tokens"));
     }
 }
