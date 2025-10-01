@@ -104,7 +104,7 @@
         <Target Name="EnsureSplashResizetizerDirectories" BeforeTargets="PrepareForBuild" Condition="'@(MauiSplashScreen)' != ''">
           <ItemGroup>
             <_SplashScreens Include="@(MauiSplashScreen)">
-              <ShortName Condition="$([System.String]::Copy('%(Filename)')).Length &gt;= 2">$([System.String]::Copy('%(Filename)').Substring(0, 2))</ShortName>
+              <ShortName Condition="$([System.String]::Copy('%(Filename)').Length) &gt;= 2">$([System.String]::Copy('%(Filename)').Substring(0, 2))</ShortName>
             </_SplashScreens>
             <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-mdpi')" />
             <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-hdpi')" />

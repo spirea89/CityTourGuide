@@ -250,7 +250,14 @@ public class AiStoryService : IAiStoryService
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-        request.Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
+
+        var content = new StringContent(payload.ToJsonString(), Encoding.UTF8);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json")
+        {
+            CharSet = Encoding.UTF8.WebName
+        };
+
+        request.Content = content;
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         var responseBody = await response.Content.ReadAsStringAsync();
