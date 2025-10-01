@@ -245,29 +245,7 @@ public class AiStoryService : IAiStoryService
     {
         var key = GetOrThrowApiKey();
 
-        var payload = new JsonObject
-        {
-            ["model"] = _model,
-            ["messages"] = new JsonArray
-            {
-                new JsonObject { ["role"] = "system", ["content"] = SystemMessage },
-                new JsonObject { ["role"] = "user", ["content"] = prompt }
-            }
-        };
-
-        if (SupportsCustomTemperature(_model))
-        {
-            payload["temperature"] = temperature;
-        }
-
-        if (RequiresMaxCompletionTokens(_model))
-        {
-            payload["max_completion_tokens"] = maxTokens;
-        }
-        else
-        {
-            payload["max_tokens"] = maxTokens;
-        }
+        var payload = CreateChatCompletionPayload(_model, prompt, temperature, maxTokens);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
@@ -528,9 +506,26 @@ public class AiStoryService : IAiStoryService
         builder.Append(text.Trim());
     }
 
-    private static bool RequiresMaxCompletionTokens(string model)
+    internal static JsonObject CreateChatCompletionPayload(string model, string prompt, double temperature, int maxTokens)
     {
-        return model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
+        var payload = new JsonObject
+        {
+            ["model"] = model,
+            ["messages"] = new JsonArray
+            {
+                new JsonObject { ["role"] = "system", ["content"] = SystemMessage },
+                new JsonObject { ["role"] = "user", ["content"] = prompt }
+            }
+        };
+
+        if (SupportsCustomTemperature(model))
+        {
+            payload["temperature"] = temperature;
+        }
+
+        payload["max_tokens"] = maxTokens;
+
+        return payload;
     }
 
     private static bool SupportsCustomTemperature(string model)
