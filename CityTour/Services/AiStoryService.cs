@@ -251,13 +251,9 @@ public class AiStoryService : IAiStoryService
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
 
-        var content = new StringContent(payload.ToJsonString(), Encoding.UTF8);
-        content.Headers.ContentType = new MediaTypeHeaderValue("application/json")
-        {
-            CharSet = Encoding.UTF8.WebName
-        };
+        var jsonContent = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
 
-        request.Content = content;
+        request.Content = jsonContent;
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         var responseBody = await response.Content.ReadAsStringAsync();
@@ -281,10 +277,10 @@ public class AiStoryService : IAiStoryService
             using var doc = JsonDocument.Parse(responseBody);
             var root = doc.RootElement;
 
-            var content = TryExtractCompletionContent(root);
-            if (!string.IsNullOrWhiteSpace(content))
+            var completionContent = TryExtractCompletionContent(root);
+            if (!string.IsNullOrWhiteSpace(completionContent))
             {
-                return content.Trim();
+                return completionContent.Trim();
             }
 
             if (TryBuildIncompleteResponseMessage(root, failureContext, out var friendlyMessage))

@@ -111,11 +111,11 @@
             <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xhdpi')" />
             <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xxhdpi')" />
             <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xxxhdpi')" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(_SplashScreens.ShortName)\\drawable-mdpi')" Condition="'%(_SplashScreens.ShortName)' != ''" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(_SplashScreens.ShortName)\\drawable-hdpi')" Condition="'%(_SplashScreens.ShortName)' != ''" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(_SplashScreens.ShortName)\\drawable-xhdpi')" Condition="'%(_SplashScreens.ShortName)' != ''" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(_SplashScreens.ShortName)\\drawable-xxhdpi')" Condition="'%(_SplashScreens.ShortName)' != ''" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(_SplashScreens.ShortName)\\drawable-xxxhdpi')" Condition="'%(_SplashScreens.ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-mdpi')" Condition="'%(ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-hdpi')" Condition="'%(ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-xhdpi')" Condition="'%(ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-xxhdpi')" Condition="'%(ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-xxxhdpi')" Condition="'%(ShortName)' != ''" />
           </ItemGroup>
           <MakeDir Directories="@(_SplashDirectories)" />
         </Target>
