@@ -48,6 +48,41 @@ public class AiStoryServiceTests
     }
 
     [Fact]
+    public void TryExtractCompletionContent_ReadsNestedOutputTextContent()
+    {
+        const string json = """
+        {
+            "response": {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Nested story paragraph."
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Nested story paragraph.", content);
+    }
+
+    [Fact]
     public void TryExtractCompletionContent_ReadsOutputTextArray()
     {
         const string json = """

@@ -145,6 +145,8 @@ public static class OpenAiResponseContentExtractor
                     if (string.Equals(type, "output_text", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(type, "text", StringComparison.OrdinalIgnoreCase))
                     {
+                        var initialLength = builder.Length;
+
                         if (element.TryGetProperty("text", out var typedText))
                         {
                             if (typedText.ValueKind == JsonValueKind.String)
@@ -157,7 +159,10 @@ public static class OpenAiResponseContentExtractor
                             }
                         }
 
-                        break;
+                        if (builder.Length > initialLength)
+                        {
+                            break;
+                        }
                     }
                 }
 
