@@ -1,262 +1,144 @@
-using System.Text;
+using System.Collections.Generic;
 using System.Text.Json;
 
 namespace CityTour.Core.Services;
 
 public static class OpenAiResponseContentExtractor
 {
+    private static readonly HashSet<string> MetadataPropertyNames = new(
+        new[]
+        {
+            "type",
+            "role",
+            "id",
+            "index",
+            "created",
+            "created_at",
+            "status",
+            "object",
+            "finish_reason",
+            "model",
+            "usage",
+            "system_fingerprint",
+        },
+        StringComparer.Ordinal);
+
+    private static readonly HashSet<string> PrioritizedPropertyNames = new(
+        new[]
+        {
+            "text",
+            "output_text",
+            "content",
+            "items",
+            "value",
+            "output",
+            "choices",
+            "messages",
+            "message",
+            "data",
+            "results",
+            "result",
+            "response",
+        },
+        StringComparer.Ordinal);
+
     public static string? TryExtractCompletionContent(JsonElement root)
     {
-        if (root.ValueKind != JsonValueKind.Object)
-        {
-            return ExtractTextFromElement(root);
-        }
+        var paragraphs = new List<string>();
+        CollectText(root, paragraphs);
 
-        if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var choice in choices.EnumerateArray())
-            {
-                var text = TryExtractTextFromChoice(choice);
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    return text;
-                }
-            }
-        }
-
-        if (root.TryGetProperty("output", out var output))
-        {
-            var text = ExtractTextFromElement(output);
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-        }
-
-        if (root.TryGetProperty("output_text", out var outputText))
-        {
-            var text = ExtractTextFromElement(outputText);
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-        }
-
-        if (root.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object)
-        {
-            var text = ExtractTextFromElement(message);
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-        }
-
-        if (root.TryGetProperty("content", out var contentElement))
-        {
-            var text = ExtractTextFromElement(contentElement);
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-        }
-
-        if (root.TryGetProperty("response", out var responseElement))
-        {
-            var text = TryExtractCompletionContent(responseElement);
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-        }
-
-        if (root.TryGetProperty("result", out var resultElement))
-        {
-            var text = TryExtractCompletionContent(resultElement);
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-        }
-
-        if (root.TryGetProperty("results", out var resultsElement))
-        {
-            var text = ExtractTextFromElement(resultsElement);
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-        }
-
-        if (root.TryGetProperty("data", out var dataElement))
-        {
-            var text = ExtractTextFromElement(dataElement);
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-        }
-
-        var fallback = ExtractTextFromElement(root);
-        if (!string.IsNullOrWhiteSpace(fallback))
-        {
-            return fallback;
-        }
-
-        return null;
+        return paragraphs.Count == 0 ? null : string.Join("\n\n", paragraphs);
     }
 
-    private static string? TryExtractTextFromChoice(JsonElement choice)
-    {
-        if (choice.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        if (choice.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object)
-        {
-            var messageText = ExtractTextFromElement(message);
-            if (!string.IsNullOrWhiteSpace(messageText))
-            {
-                return messageText;
-            }
-        }
-
-        if (choice.TryGetProperty("text", out var textElement))
-        {
-            return textElement.ValueKind == JsonValueKind.String
-                ? textElement.GetString()
-                : ExtractTextFromElement(textElement);
-        }
-
-        if (choice.TryGetProperty("content", out var contentElement))
-        {
-            var text = ExtractTextFromElement(contentElement);
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-        }
-
-        return null;
-    }
-
-    internal static string? ExtractTextFromElement(JsonElement element)
-    {
-        var builder = new StringBuilder();
-        AppendTextFromElement(element, builder);
-        return builder.Length > 0 ? builder.ToString() : null;
-    }
-
-    private static void AppendTextFromElement(JsonElement element, StringBuilder builder)
+    private static void CollectText(JsonElement element, List<string> paragraphs)
     {
         switch (element.ValueKind)
         {
             case JsonValueKind.String:
-                AppendText(builder, element.GetString());
+                AppendParagraph(paragraphs, element.GetString());
                 break;
             case JsonValueKind.Array:
                 foreach (var item in element.EnumerateArray())
                 {
-                    AppendTextFromElement(item, builder);
+                    CollectText(item, paragraphs);
                 }
 
                 break;
             case JsonValueKind.Object:
-                if (element.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String)
+                if (TryHandleReasoningElement(element, paragraphs))
                 {
-                    var type = typeElement.GetString();
-                    if (string.Equals(type, "reasoning", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (element.TryGetProperty("summary", out var summary))
-                        {
-                            AppendTextFromElement(summary, builder);
-                        }
+                    return;
+                }
 
-                        break;
+                ProcessProperty(element, "text", paragraphs);
+                ProcessProperty(element, "output_text", paragraphs);
+                ProcessProperty(element, "content", paragraphs);
+                ProcessProperty(element, "items", paragraphs);
+                ProcessProperty(element, "value", paragraphs);
+                ProcessProperty(element, "output", paragraphs);
+                ProcessProperty(element, "choices", paragraphs);
+                ProcessProperty(element, "messages", paragraphs);
+                ProcessProperty(element, "message", paragraphs);
+                ProcessProperty(element, "data", paragraphs);
+                ProcessProperty(element, "results", paragraphs);
+                ProcessProperty(element, "result", paragraphs);
+                ProcessProperty(element, "response", paragraphs);
+
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (MetadataPropertyNames.Contains(property.Name))
+                    {
+                        continue;
                     }
 
-                    if (string.Equals(type, "output_text", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(type, "text", StringComparison.OrdinalIgnoreCase))
+                    if (PrioritizedPropertyNames.Contains(property.Name))
                     {
-                        var initialLength = builder.Length;
-
-                        if (element.TryGetProperty("text", out var typedText))
-                        {
-                            if (typedText.ValueKind == JsonValueKind.String)
-                            {
-                                AppendText(builder, typedText.GetString());
-                            }
-                            else
-                            {
-                                AppendTextFromElement(typedText, builder);
-                            }
-                        }
-
-                        if (builder.Length > initialLength)
-                        {
-                            break;
-                        }
+                        continue;
                     }
-                }
 
-                if (element.TryGetProperty("text", out var text))
-                {
-                    if (text.ValueKind == JsonValueKind.String)
-                    {
-                        AppendText(builder, text.GetString());
-                    }
-                    else
-                    {
-                        AppendTextFromElement(text, builder);
-                    }
-                }
-
-                if (element.TryGetProperty("content", out var content))
-                {
-                    AppendTextFromElement(content, builder);
-                }
-
-                if (element.TryGetProperty("value", out var value))
-                {
-                    AppendTextFromElement(value, builder);
-                }
-
-                if (element.TryGetProperty("output", out var output))
-                {
-                    AppendTextFromElement(output, builder);
-                }
-
-                if (element.TryGetProperty("output_text", out var outputText))
-                {
-                    AppendTextFromElement(outputText, builder);
-                }
-
-                if (element.TryGetProperty("choices", out var nestedChoices))
-                {
-                    AppendTextFromElement(nestedChoices, builder);
-                }
-
-                if (element.TryGetProperty("messages", out var messages))
-                {
-                    AppendTextFromElement(messages, builder);
+                    CollectText(property.Value, paragraphs);
                 }
 
                 break;
         }
     }
 
-    private static void AppendText(StringBuilder builder, string? text)
+    private static bool TryHandleReasoningElement(JsonElement element, List<string> paragraphs)
+    {
+        if (!element.TryGetProperty("type", out var typeElement) || typeElement.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var type = typeElement.GetString();
+        if (!string.Equals(type, "reasoning", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (element.TryGetProperty("summary", out var summary))
+        {
+            CollectText(summary, paragraphs);
+        }
+
+        return true;
+    }
+
+    private static void ProcessProperty(JsonElement element, string name, List<string> paragraphs)
+    {
+        if (element.TryGetProperty(name, out var value))
+        {
+            CollectText(value, paragraphs);
+        }
+    }
+
+    private static void AppendParagraph(List<string> paragraphs, string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
             return;
         }
 
-        if (builder.Length > 0)
-        {
-            builder.AppendLine().AppendLine();
-        }
-
-        builder.Append(text.Trim());
+        paragraphs.Add(text.Trim());
     }
 }
