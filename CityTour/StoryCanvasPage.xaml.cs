@@ -60,6 +60,7 @@ public partial class StoryCanvasPage : ContentPage
     private const string ChatBusyStatusMessage = "Asking the tour guide…";
     private const string ChatFollowUpStatusMessage = "Ask another follow-up question whenever you're curious.";
     private string? _lastRawOpenAiResponse;
+    private bool _isPromptVisible;
 
     public StoryCanvasPage(
         string placeId,
@@ -103,6 +104,7 @@ public partial class StoryCanvasPage : ContentPage
         UpdateRegenerateButtonText();
         ChatCollectionView.ItemsSource = _chatMessages;
         ChatStatusLabel.Text = ChatReadyStatusMessage;
+        SetPromptVisibility(false);
         UpdatePromptPreview();
 
         StoryEditor.TextChanged += OnStoryTextChanged;
@@ -440,6 +442,18 @@ public partial class StoryCanvasPage : ContentPage
             _buildingFacts,
             _preferredLanguage);
         PromptLabel.Text = prompt;
+    }
+
+    private void OnTogglePromptClicked(object? sender, EventArgs e)
+    {
+        SetPromptVisibility(!_isPromptVisible);
+    }
+
+    private void SetPromptVisibility(bool isVisible)
+    {
+        _isPromptVisible = isVisible;
+        PromptLabel.IsVisible = isVisible;
+        TogglePromptButton.Text = isVisible ? "Hide prompt" : "Show prompt";
     }
 
     private void OnSendChatClicked(object? sender, EventArgs e)
