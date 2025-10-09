@@ -189,6 +189,45 @@ public class AiStoryServiceTests
     }
 
     [Fact]
+    public void TryExtractCompletionContent_IgnoresContentFilterMetadata()
+    {
+        const string json = """
+        {
+            "response": {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": {
+                                    "value": "Story from value node."
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "content_filter_results": {
+                    "hate": {
+                        "filtered": false,
+                        "severity": "safe",
+                        "source": "default"
+                    }
+                }
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Story from value node.", content);
+    }
+
+    [Fact]
     public void TryExtractCompletionContent_ReadsChoicesMessage()
     {
         const string json = """
