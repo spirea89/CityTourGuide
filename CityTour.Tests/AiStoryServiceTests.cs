@@ -157,4 +157,34 @@ public class AiStoryServiceTests
 
         Assert.Equal("Fallback story.", content);
     }
+
+    [Fact]
+    public void TryExtractCompletionContent_ReadsItemsCollection()
+    {
+        const string json = """
+        {
+            "response": {
+                "status": "completed",
+                "items": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "items": [
+                            {
+                                "type": "output_text",
+                                "text": "Items based story."
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Items based story.", content);
+    }
 }

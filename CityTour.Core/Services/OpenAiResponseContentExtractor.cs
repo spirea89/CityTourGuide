@@ -162,6 +162,9 @@ public static class OpenAiResponseContentExtractor
 
                 break;
             case JsonValueKind.Object:
+            {
+                var initialLength = builder.Length;
+
                 if (element.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String)
                 {
                     var type = typeElement.GetString();
@@ -172,76 +175,79 @@ public static class OpenAiResponseContentExtractor
                             AppendTextFromElement(summary, builder);
                         }
 
-                        break;
+                        return;
                     }
+                }
 
-                    if (string.Equals(type, "output_text", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(type, "text", StringComparison.OrdinalIgnoreCase))
+                AppendProperty("text");
+                AppendProperty("content");
+                AppendProperty("value");
+                AppendProperty("output");
+                AppendProperty("output_text");
+                AppendProperty("choices");
+                AppendProperty("messages");
+
+                if (builder.Length > initialLength)
+                {
+                    return;
+                }
+
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (ShouldSkip(property))
                     {
-                        var initialLength = builder.Length;
-
-                        if (element.TryGetProperty("text", out var typedText))
-                        {
-                            if (typedText.ValueKind == JsonValueKind.String)
-                            {
-                                AppendText(builder, typedText.GetString());
-                            }
-                            else
-                            {
-                                AppendTextFromElement(typedText, builder);
-                            }
-                        }
-
-                        if (builder.Length > initialLength)
-                        {
-                            break;
-                        }
+                        continue;
                     }
-                }
 
-                if (element.TryGetProperty("text", out var text))
-                {
-                    if (text.ValueKind == JsonValueKind.String)
+                    var before = builder.Length;
+                    AppendTextFromElement(property.Value, builder);
+
+                    if (builder.Length > before)
                     {
-                        AppendText(builder, text.GetString());
+                        // Keep gathering text from other properties in case the
+                        // response spreads the content across multiple fields.
+                        continue;
                     }
-                    else
+                }
+
+                return;
+
+                void AppendProperty(string name)
+                {
+                    if (element.TryGetProperty(name, out var value))
                     {
-                        AppendTextFromElement(text, builder);
+                        AppendTextFromElement(value, builder);
                     }
                 }
 
-                if (element.TryGetProperty("content", out var content))
+                static bool ShouldSkip(JsonProperty property)
                 {
-                    AppendTextFromElement(content, builder);
-                }
+                    if (property.NameEquals("type")
+                        || property.NameEquals("role")
+                        || property.NameEquals("id")
+                        || property.NameEquals("index")
+                        || property.NameEquals("created")
+                        || property.NameEquals("created_at")
+                        || property.NameEquals("status")
+                        || property.NameEquals("object")
+                        || property.NameEquals("finish_reason")
+                        || property.NameEquals("model")
+                        || property.NameEquals("usage")
+                        || property.NameEquals("system_fingerprint")
+                        || property.NameEquals("text")
+                        || property.NameEquals("content")
+                        || property.NameEquals("value")
+                        || property.NameEquals("output")
+                        || property.NameEquals("output_text")
+                        || property.NameEquals("choices")
+                        || property.NameEquals("messages"))
+                    {
+                        return true;
+                    }
 
-                if (element.TryGetProperty("value", out var value))
-                {
-                    AppendTextFromElement(value, builder);
+                    return false;
                 }
-
-                if (element.TryGetProperty("output", out var output))
-                {
-                    AppendTextFromElement(output, builder);
-                }
-
-                if (element.TryGetProperty("output_text", out var outputText))
-                {
-                    AppendTextFromElement(outputText, builder);
-                }
-
-                if (element.TryGetProperty("choices", out var nestedChoices))
-                {
-                    AppendTextFromElement(nestedChoices, builder);
-                }
-
-                if (element.TryGetProperty("messages", out var messages))
-                {
-                    AppendTextFromElement(messages, builder);
-                }
-
-                break;
+            }
         }
     }
 
