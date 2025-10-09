@@ -21,6 +21,8 @@ public static class OpenAiResponseContentExtractor
             "usage",
             "system_fingerprint",
             "content_filter_results",
+            "metadata",
+            "annotations",
         },
         StringComparer.Ordinal);
 
