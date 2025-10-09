@@ -228,6 +228,78 @@ public class AiStoryServiceTests
     }
 
     [Fact]
+    public void TryExtractCompletionContent_IgnoresMessageMetadata()
+    {
+        const string json = """
+        {
+            "response": {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "Story without metadata noise."
+                            }
+                        ],
+                        "metadata": {
+                            "source": "default"
+                        }
+                    }
+                ]
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Story without metadata noise.", content);
+    }
+
+    [Fact]
+    public void TryExtractCompletionContent_IgnoresAnnotationsMetadata()
+    {
+        const string json = """
+        {
+            "response": {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "Historical tale.",
+                                "annotations": [
+                                    {
+                                        "type": "citation",
+                                        "text": "[1]",
+                                        "metadata": {
+                                            "source": "default"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Historical tale.", content);
+    }
+
+    [Fact]
     public void TryExtractCompletionContent_ReadsChoicesMessage()
     {
         const string json = """
