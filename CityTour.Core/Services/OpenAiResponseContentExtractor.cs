@@ -69,6 +69,39 @@ public static class OpenAiResponseContentExtractor
             }
         }
 
+        if (root.TryGetProperty("result", out var resultElement))
+        {
+            var text = TryExtractCompletionContent(resultElement);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        if (root.TryGetProperty("results", out var resultsElement))
+        {
+            var text = ExtractTextFromElement(resultsElement);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        if (root.TryGetProperty("data", out var dataElement))
+        {
+            var text = ExtractTextFromElement(dataElement);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        var fallback = ExtractTextFromElement(root);
+        if (!string.IsNullOrWhiteSpace(fallback))
+        {
+            return fallback;
+        }
+
         return null;
     }
 
