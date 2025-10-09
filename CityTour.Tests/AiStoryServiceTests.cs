@@ -100,4 +100,61 @@ public class AiStoryServiceTests
 
         Assert.Equal("First paragraph.\n\nSecond paragraph.", content);
     }
+
+    [Fact]
+    public void TryExtractCompletionContent_ReadsResultEnvelope()
+    {
+        const string json = """
+        {
+            "result": {
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "Result envelope story."
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Result envelope story.", content);
+    }
+
+    [Fact]
+    public void TryExtractCompletionContent_ReadsDataArrayFallback()
+    {
+        const string json = """
+        {
+            "data": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Fallback story."
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Fallback story.", content);
+    }
 }
