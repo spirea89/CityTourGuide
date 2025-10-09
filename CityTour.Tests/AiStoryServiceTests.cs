@@ -15,7 +15,7 @@ public class AiStoryServiceTests
         Assert.True(payload.TryGetPropertyValue("max_completion_tokens", out var maxTokens));
         Assert.Equal(42, maxTokens!.GetValue<int>());
         Assert.False(payload.ContainsKey("max_tokens"));
-}
+    }
 
     [Fact]
     public void TryExtractCompletionContent_ReadsResponseOutput()
@@ -156,5 +156,106 @@ public class AiStoryServiceTests
         var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
 
         Assert.Equal("Fallback story.", content);
+    }
+
+    [Fact]
+    public void TryExtractCompletionContent_ReadsItemsCollection()
+    {
+        const string json = """
+        {
+            "response": {
+                "status": "completed",
+                "items": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "items": [
+                            {
+                                "type": "output_text",
+                                "text": "Items based story."
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Items based story.", content);
+    }
+
+    [Fact]
+    public void TryExtractCompletionContent_ReadsChoicesMessage()
+    {
+        const string json = """
+        {
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Choice message story."
+                            }
+                        ]
+                    },
+                    "finish_reason": "stop"
+                }
+            ]
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Choice message story.", content);
+    }
+
+    [Fact]
+    public void TryExtractCompletionContent_CombinesContentAndItems()
+    {
+        const string json = """
+        {
+            "response": {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "First paragraph."
+                            }
+                        ],
+                        "items": [
+                            {
+                                "type": "output_text",
+                                "items": [
+                                    {
+                                        "type": "text",
+                                        "text": "Second paragraph."
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("First paragraph.\n\nSecond paragraph.", content);
     }
 }
