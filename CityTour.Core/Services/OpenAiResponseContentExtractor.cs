@@ -20,27 +20,26 @@ public static class OpenAiResponseContentExtractor
             "model",
             "usage",
             "system_fingerprint",
+            "content_filter_results",
         },
         StringComparer.Ordinal);
 
-    private static readonly HashSet<string> PrioritizedPropertyNames = new(
-        new[]
-        {
-            "text",
-            "output_text",
-            "content",
-            "items",
-            "value",
-            "output",
-            "choices",
-            "messages",
-            "message",
-            "data",
-            "results",
-            "result",
-            "response",
-        },
-        StringComparer.Ordinal);
+    private static readonly string[] PrioritizedPropertyNames =
+    {
+        "text",
+        "output_text",
+        "content",
+        "items",
+        "value",
+        "output",
+        "choices",
+        "messages",
+        "message",
+        "data",
+        "results",
+        "result",
+        "response",
+    };
 
     public static string? TryExtractCompletionContent(JsonElement root)
     {
@@ -70,19 +69,15 @@ public static class OpenAiResponseContentExtractor
                     return;
                 }
 
-                ProcessProperty(element, "text", paragraphs);
-                ProcessProperty(element, "output_text", paragraphs);
-                ProcessProperty(element, "content", paragraphs);
-                ProcessProperty(element, "items", paragraphs);
-                ProcessProperty(element, "value", paragraphs);
-                ProcessProperty(element, "output", paragraphs);
-                ProcessProperty(element, "choices", paragraphs);
-                ProcessProperty(element, "messages", paragraphs);
-                ProcessProperty(element, "message", paragraphs);
-                ProcessProperty(element, "data", paragraphs);
-                ProcessProperty(element, "results", paragraphs);
-                ProcessProperty(element, "result", paragraphs);
-                ProcessProperty(element, "response", paragraphs);
+                var processedProperties = new HashSet<string>(StringComparer.Ordinal);
+
+                foreach (var propertyName in PrioritizedPropertyNames)
+                {
+                    if (ProcessProperty(element, propertyName, paragraphs))
+                    {
+                        processedProperties.Add(propertyName);
+                    }
+                }
 
                 foreach (var property in element.EnumerateObject())
                 {
@@ -91,7 +86,7 @@ public static class OpenAiResponseContentExtractor
                         continue;
                     }
 
-                    if (PrioritizedPropertyNames.Contains(property.Name))
+                    if (processedProperties.Contains(property.Name))
                     {
                         continue;
                     }
@@ -124,12 +119,16 @@ public static class OpenAiResponseContentExtractor
         return true;
     }
 
-    private static void ProcessProperty(JsonElement element, string name, List<string> paragraphs)
+    private static bool ProcessProperty(JsonElement element, string name, List<string> paragraphs)
     {
         if (element.TryGetProperty(name, out var value))
         {
+            var beforeCount = paragraphs.Count;
             CollectText(value, paragraphs);
+            return paragraphs.Count > beforeCount;
         }
+
+        return false;
     }
 
     private static void AppendParagraph(List<string> paragraphs, string? text)
