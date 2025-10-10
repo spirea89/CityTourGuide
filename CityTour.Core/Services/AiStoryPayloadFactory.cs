@@ -47,7 +47,14 @@ public static class AiStoryPayloadFactory
             payload["temperature"] = temperature;
         }
 
-        payload["max_completion_tokens"] = maxTokens;
+        if (RequiresMaxCompletionTokens(model))
+        {
+            payload["max_completion_tokens"] = maxTokens;
+        }
+        else
+        {
+            payload["max_tokens"] = maxTokens;
+        }
 
         return payload;
     }
@@ -55,6 +62,11 @@ public static class AiStoryPayloadFactory
     private static bool SupportsCustomTemperature(string model)
     {
         return !model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool RequiresMaxCompletionTokens(string model)
+    {
+        return model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
     }
 }
 
