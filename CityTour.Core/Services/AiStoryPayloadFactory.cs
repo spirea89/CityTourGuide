@@ -34,13 +34,25 @@ public static class AiStoryPayloadFactory
 
         var payload = new JsonObject
         {
-            ["model"] = model,
-            ["messages"] = new JsonArray
+            ["model"] = model
+        };
+
+        if (UsesResponsesEndpoint(model))
+        {
+            payload["input"] = new JsonArray
             {
                 new JsonObject { ["role"] = "system", ["content"] = systemMessage },
                 new JsonObject { ["role"] = "user", ["content"] = prompt }
-            }
-        };
+            };
+        }
+        else
+        {
+            payload["messages"] = new JsonArray
+            {
+                new JsonObject { ["role"] = "system", ["content"] = systemMessage },
+                new JsonObject { ["role"] = "user", ["content"] = prompt }
+            };
+        }
 
         if (SupportsCustomTemperature(model))
         {
@@ -59,12 +71,22 @@ public static class AiStoryPayloadFactory
         return payload;
     }
 
+    public static bool UsesResponsesEndpoint(string model)
+    {
+        return IsGpt5Model(model);
+    }
+
     private static bool SupportsCustomTemperature(string model)
     {
-        return !model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
+        return !IsGpt5Model(model);
     }
 
     private static bool RequiresMaxCompletionTokens(string model)
+    {
+        return IsGpt5Model(model);
+    }
+
+    private static bool IsGpt5Model(string model)
     {
         return model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
     }
