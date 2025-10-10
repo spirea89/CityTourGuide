@@ -18,6 +18,16 @@ public class AiStoryServiceTests
     }
 
     [Fact]
+    public void CreateChatCompletionPayload_UsesLegacyMaxTokensForNonGpt5Models()
+    {
+        var payload = AiStoryPayloadFactory.Create("gpt-4o-mini", "prompt", 0.5, 99);
+
+        Assert.True(payload.TryGetPropertyValue("max_tokens", out var maxTokens));
+        Assert.Equal(99, maxTokens!.GetValue<int>());
+        Assert.False(payload.ContainsKey("max_completion_tokens"));
+    }
+
+    [Fact]
     public void TryExtractCompletionContent_ReadsResponseOutput()
     {
         const string json = """
