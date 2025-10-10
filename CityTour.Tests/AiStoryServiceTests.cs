@@ -331,6 +331,43 @@ public class AiStoryServiceTests
     }
 
     [Fact]
+    public void TryExtractCompletionContent_IgnoresToolUseMetadata()
+    {
+        const string json = """
+        {
+            "response": {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "default",
+                                "input": {
+                                    "query": "When was the building opened?"
+                                }
+                            },
+                            {
+                                "type": "output_text",
+                                "text": "Tool-free story content."
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Tool-free story content.", content);
+    }
+
+    [Fact]
     public void TryExtractCompletionContent_ReadsChoicesMessage()
     {
         const string json = """

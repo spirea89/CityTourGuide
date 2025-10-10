@@ -105,6 +105,11 @@ public static class OpenAiResponseContentExtractor
                     return;
                 }
 
+                if (IsToolContext(typeContext))
+                {
+                    return;
+                }
+
                 var processedProperties = new HashSet<string>(StringComparer.Ordinal);
 
                 foreach (var propertyName in PrioritizedPropertyNames)
@@ -132,6 +137,13 @@ public static class OpenAiResponseContentExtractor
 
                 break;
         }
+    }
+
+    private static bool IsToolContext(string? typeContext)
+    {
+        return string.Equals(typeContext, "tool_use", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(typeContext, "tool_result", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(typeContext, "tool_call", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool ProcessProperty(
