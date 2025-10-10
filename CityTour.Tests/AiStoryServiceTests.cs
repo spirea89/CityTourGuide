@@ -400,4 +400,84 @@ public class AiStoryServiceTests
 
         Assert.Equal("First paragraph.\n\nSecond paragraph.", content);
     }
+
+    [Fact]
+    public void TryExtractCompletionContent_PrefersOutputTextOverReasoning()
+    {
+        const string json = """
+        {
+            "response": {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "reasoning",
+                                "summary": {
+                                    "type": "output_text",
+                                    "text": "High-level reasoning summary."
+                                }
+                            },
+                            {
+                                "type": "output_text",
+                                "text": [
+                                    {
+                                        "type": "paragraph",
+                                        "text": "Actual story paragraph."
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Actual story paragraph.", content);
+    }
+
+    [Fact]
+    public void TryExtractCompletionContent_FallsBackToReasoningSummary()
+    {
+        const string json = """
+        {
+            "response": {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "reasoning",
+                                "summary": {
+                                    "type": "output_text",
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "Fallback reasoning summary."
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Fallback reasoning summary.", content);
+    }
 }
