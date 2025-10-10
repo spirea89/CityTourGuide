@@ -100,7 +100,7 @@ public class AiStoryService : IAiStoryService
         }
 
         var prompt = BuildStoryPrompt(buildingName, buildingAddress, category, facts, language);
-        var story = await SendChatCompletionAsync(prompt, 0.8, 600, "story", cancellationToken);
+        var story = await SendCompletionAsync(prompt, 0.8, 600, "story", cancellationToken);
 
         return new StoryGenerationResult(story, prompt);
     }
@@ -198,7 +198,7 @@ public class AiStoryService : IAiStoryService
         }
 
         var prompt = BuildFollowUpPrompt(buildingName, buildingAddress, currentStory, question);
-        return await SendChatCompletionAsync(prompt, 0.7, 400, "follow-up answer", cancellationToken);
+        return await SendCompletionAsync(prompt, 0.7, 400, "follow-up answer", cancellationToken);
     }
 
     private string BuildFollowUpPrompt(
@@ -237,7 +237,7 @@ public class AiStoryService : IAiStoryService
         return promptBuilder.ToString().Trim();
     }
 
-    private async Task<string> SendChatCompletionAsync(
+    private async Task<string> SendCompletionAsync(
         string prompt,
         double temperature,
         int maxTokens,
@@ -248,7 +248,11 @@ public class AiStoryService : IAiStoryService
 
         var payload = AiStoryPayloadFactory.Create(_model, prompt, temperature, maxTokens, SystemMessage);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
+        var endpoint = AiStoryPayloadFactory.UsesResponsesEndpoint(_model)
+            ? "https://api.openai.com/v1/responses"
+            : "https://api.openai.com/v1/chat/completions";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
 
         var jsonContent = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
@@ -333,7 +337,7 @@ public class AiStoryService : IAiStoryService
         return false;
     }
 
-    internal static JsonObject CreateChatCompletionPayload(string model, string prompt, double temperature, int maxTokens)
+    internal static JsonObject CreateCompletionPayload(string model, string prompt, double temperature, int maxTokens)
         => AiStoryPayloadFactory.Create(model, prompt, temperature, maxTokens, SystemMessage);
 
     private string GetOrThrowApiKey()
