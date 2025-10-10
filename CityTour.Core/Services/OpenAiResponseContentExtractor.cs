@@ -23,6 +23,7 @@ public static class OpenAiResponseContentExtractor
             "content_filter_results",
             "metadata",
             "annotations",
+            "source",
         },
         StringComparer.Ordinal);
 
