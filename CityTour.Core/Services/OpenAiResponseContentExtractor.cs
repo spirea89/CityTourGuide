@@ -47,28 +47,61 @@ public static class OpenAiResponseContentExtractor
     public static string? TryExtractCompletionContent(JsonElement root)
     {
         var paragraphs = new List<string>();
-        CollectText(root, paragraphs);
+        var reasoningFallback = new List<string>();
+        CollectText(root, paragraphs, reasoningFallback, null);
 
-        return paragraphs.Count == 0 ? null : string.Join("\n\n", paragraphs);
+        if (paragraphs.Count > 0)
+        {
+            return string.Join("\n\n", paragraphs);
+        }
+
+        return reasoningFallback.Count == 0 ? null : string.Join("\n\n", reasoningFallback);
     }
 
-    private static void CollectText(JsonElement element, List<string> paragraphs)
+    private static void CollectText(
+        JsonElement element,
+        List<string> paragraphs,
+        List<string> reasoningFallback,
+        string? contextType)
     {
         switch (element.ValueKind)
         {
             case JsonValueKind.String:
-                AppendParagraph(paragraphs, element.GetString());
+                if (string.Equals(contextType, "reasoning", StringComparison.OrdinalIgnoreCase))
+                {
+                    AppendParagraph(reasoningFallback, element.GetString());
+                }
+                else
+                {
+                    AppendParagraph(paragraphs, element.GetString());
+                }
                 break;
             case JsonValueKind.Array:
                 foreach (var item in element.EnumerateArray())
                 {
-                    CollectText(item, paragraphs);
+                    CollectText(item, paragraphs, reasoningFallback, contextType);
                 }
 
                 break;
             case JsonValueKind.Object:
-                if (TryHandleReasoningElement(element, paragraphs))
+                var typeContext = contextType;
+                if (element.TryGetProperty("type", out var typeElement)
+                    && typeElement.ValueKind == JsonValueKind.String)
                 {
+                    var typeValue = typeElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(typeValue))
+                    {
+                        typeContext = typeValue;
+                    }
+                }
+
+                if (string.Equals(typeContext, "reasoning", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (element.TryGetProperty("summary", out var summary))
+                    {
+                        CollectText(summary, reasoningFallback, reasoningFallback, typeContext);
+                    }
+
                     return;
                 }
 
@@ -76,7 +109,7 @@ public static class OpenAiResponseContentExtractor
 
                 foreach (var propertyName in PrioritizedPropertyNames)
                 {
-                    if (ProcessProperty(element, propertyName, paragraphs))
+                    if (ProcessProperty(element, propertyName, paragraphs, reasoningFallback, typeContext))
                     {
                         processedProperties.Add(propertyName);
                     }
@@ -94,41 +127,26 @@ public static class OpenAiResponseContentExtractor
                         continue;
                     }
 
-                    CollectText(property.Value, paragraphs);
+                    CollectText(property.Value, paragraphs, reasoningFallback, typeContext);
                 }
 
                 break;
         }
     }
 
-    private static bool TryHandleReasoningElement(JsonElement element, List<string> paragraphs)
-    {
-        if (!element.TryGetProperty("type", out var typeElement) || typeElement.ValueKind != JsonValueKind.String)
-        {
-            return false;
-        }
-
-        var type = typeElement.GetString();
-        if (!string.Equals(type, "reasoning", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (element.TryGetProperty("summary", out var summary))
-        {
-            CollectText(summary, paragraphs);
-        }
-
-        return true;
-    }
-
-    private static bool ProcessProperty(JsonElement element, string name, List<string> paragraphs)
+    private static bool ProcessProperty(
+        JsonElement element,
+        string name,
+        List<string> paragraphs,
+        List<string> reasoningFallback,
+        string? contextType)
     {
         if (element.TryGetProperty(name, out var value))
         {
             var beforeCount = paragraphs.Count;
-            CollectText(value, paragraphs);
-            return paragraphs.Count > beforeCount;
+            var beforeFallback = reasoningFallback.Count;
+            CollectText(value, paragraphs, reasoningFallback, contextType);
+            return paragraphs.Count > beforeCount || reasoningFallback.Count > beforeFallback;
         }
 
         return false;
