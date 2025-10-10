@@ -300,6 +300,37 @@ public class AiStoryServiceTests
     }
 
     [Fact]
+    public void TryExtractCompletionContent_IgnoresSourceProperty()
+    {
+        const string json = """
+        {
+            "response": {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "Story text.",
+                                "source": "default"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """;
+
+        using var document = JsonDocument.Parse(json);
+
+        var content = OpenAiResponseContentExtractor.TryExtractCompletionContent(document.RootElement);
+
+        Assert.Equal("Story text.", content);
+    }
+
+    [Fact]
     public void TryExtractCompletionContent_ReadsChoicesMessage()
     {
         const string json = """
