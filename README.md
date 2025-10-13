@@ -55,6 +55,13 @@ print(f"OpenAI key loaded: {openai_key[:7]}…")
 print(f"Google key loaded: {google_key[:7]}…")
 ```
 
+### .NET MAUI app
+
+The CityTour MAUI application automatically looks for a `.env` file in the
+project directory (and its parents) when resolving API keys. Define
+`OPENAI_API_KEY` and `GOOGLE_API_KEY` in `.env` to use the app without bundling
+keys into the package.
+
 ## GitHub Actions
 
 The [`ci-secrets-example` workflow](.github/workflows/ci-secrets-example.yml)

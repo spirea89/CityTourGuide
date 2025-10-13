@@ -23,10 +23,23 @@ public class ApiKeyProvider : IApiKeyProvider
 
     private readonly Lazy<ApiKeyPayload> _secrets = new(LoadSecrets);
 
-    public string? GoogleMapsApiKey => Normalize(_secrets.Value.GoogleMapsApiKey);
-    public string? GooglePlacesApiKey => Normalize(_secrets.Value.GooglePlacesApiKey);
-    public string? OpenAiApiKey => Normalize(_secrets.Value.OpenAiApiKey);
-    public string? WikipediaApiKey => Normalize(_secrets.Value.WikipediaApiKey);
+    public string? GoogleMapsApiKey => Normalize(
+        _secrets.Value.GoogleMapsApiKey
+        ?? EnvironmentSecrets.TryGetValue("GOOGLE_MAPS_API_KEY")
+        ?? EnvironmentSecrets.TryGetValue("GOOGLE_API_KEY"));
+
+    public string? GooglePlacesApiKey => Normalize(
+        _secrets.Value.GooglePlacesApiKey
+        ?? EnvironmentSecrets.TryGetValue("GOOGLE_PLACES_API_KEY")
+        ?? EnvironmentSecrets.TryGetValue("GOOGLE_API_KEY"));
+
+    public string? OpenAiApiKey => Normalize(
+        _secrets.Value.OpenAiApiKey
+        ?? EnvironmentSecrets.TryGetValue("OPENAI_API_KEY"));
+
+    public string? WikipediaApiKey => Normalize(
+        _secrets.Value.WikipediaApiKey
+        ?? EnvironmentSecrets.TryGetValue("WIKIPEDIA_API_KEY"));
 
     private static ApiKeyPayload LoadSecrets()
     {
