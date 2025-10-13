@@ -8,11 +8,11 @@ namespace CityTour.Tests;
 public class AiStoryServiceTests
 {
     [Fact]
-    public void CreateCompletionPayload_UsesMaxTokensForGpt5()
+    public void CreateCompletionPayload_UsesMaxOutputTokensForGpt5()
     {
         var payload = AiStoryPayloadFactory.Create("gpt-5", "prompt", 0.5, 42);
 
-        Assert.True(payload.TryGetPropertyValue("max_completion_tokens", out var maxTokens));
+        Assert.True(payload.TryGetPropertyValue("max_output_tokens", out var maxTokens));
         Assert.Equal(42, maxTokens!.GetValue<int>());
         Assert.False(payload.ContainsKey("max_tokens"));
         Assert.True(payload.ContainsKey("input"));
@@ -26,7 +26,7 @@ public class AiStoryServiceTests
 
         Assert.True(payload.TryGetPropertyValue("max_tokens", out var maxTokens));
         Assert.Equal(99, maxTokens!.GetValue<int>());
-        Assert.False(payload.ContainsKey("max_completion_tokens"));
+        Assert.False(payload.ContainsKey("max_output_tokens"));
         Assert.True(payload.ContainsKey("messages"));
         Assert.False(payload.ContainsKey("input"));
     }
