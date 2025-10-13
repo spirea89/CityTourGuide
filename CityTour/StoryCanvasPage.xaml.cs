@@ -40,10 +40,10 @@ public partial class StoryCanvasPage : ContentPage
     };
     private readonly List<ModelOption> _modelOptions = new()
     {
+        new("GPT-4o", "gpt-4o", "Balanced quality and cost"),
         new("GPT-5", "gpt-5", "Next-generation reasoning and creativity"),
         new("GPT-4.1", "gpt-4.1", "Highest quality responses"),
         new("GPT-4.1 mini", "gpt-4.1-mini", "Smarter reasoning, moderate speed"),
-        new("GPT-4o", "gpt-4o", "Balanced quality and cost"),
         new("GPT-4o mini", "gpt-4o-mini", "Fast and cost-efficient")
     };
     private ModelOption? _selectedModel;
