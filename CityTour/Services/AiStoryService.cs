@@ -372,7 +372,7 @@ public class AiStoryService : IAiStoryService
             return key;
         }
 
-        key = Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? string.Empty;
+        key = EnvironmentSecrets.TryGetValue("OPENAI_API_KEY") ?? string.Empty;
         _apiKey = key;
         return key;
     }
