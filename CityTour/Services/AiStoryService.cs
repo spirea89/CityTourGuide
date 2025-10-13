@@ -41,15 +41,15 @@ public interface IAiStoryService
 
 public class AiStoryService : IAiStoryService
 {
-    private const string DefaultModel = "gpt-5";
+    private const string DefaultModel = "gpt-4o";
     private const string ModelPreferenceKey = "ai.story.model";
     private const string SystemMessage = AiStorySystemPrompts.Default;
     internal const string RawResponseDataKey = "RawOpenAiResponse";
-    private const string HistoryPromptTemplate = "You are a meticulous local historian. Using only facts about {address}, write a vivid, chronological ~120–150 word history highlighting founding date, name changes, 2–3 pivotal events, and significance.";
-    private const string PersonalitiesPromptTemplate = "You are a culturally savvy guide. From facts on people linked to {address}, craft a ~110–140 word mini-story weaving 2–3 notable figures with full names, dates, roles, and one concrete anecdote each; avoid speculation.";
-    private const string ArchitecturePromptTemplate = "You are an architect explaining to curious visitors. Based strictly on facts, describe {address}’s style, architect, era, materials, façade/interior highlights, notable alterations, and 2 street-level details to spot in clear (~120–150 words).";
-    private const string TodayPromptTemplate = "You are a practical local host. In ~90–120 words, summarize {address}’s current purpose/occupants, public access (hours, tickets, accessibility), photo/etiquette notes, and one nearby tip; if any item isn’t in facts.” ";
-    private const string KidsPromptTemplate = "You are a playful storyteller for ages 6–10. In ~90–110 words, tell a cheerful, simple story about {address} using easy sentences, fun comparisons or sounds, one cool fact from facts, no scary content, and end with a question inviting kids to spot a detail when they visit.";
+    private const string HistoryPromptTemplate = "You are a meticulous local historian. Using only {facts} about {address}, write a vivid, chronological ~120–150 word history highlighting founding date, name changes, 2–3 pivotal events, and significance.";
+    private const string PersonalitiesPromptTemplate = "You are a culturally savvy guide. From {facts} on people linked to {address}, craft a ~110–140 word mini-story weaving 2–3 notable figures with full names, dates, roles, and one concrete anecdote each; avoid speculation.";
+    private const string ArchitecturePromptTemplate = "You are an architect explaining to curious visitors. Based strictly on {facts} about {address}, describe its style, architect, era, materials, façade/interior highlights, notable alterations, and 2 street-level details to spot in clear (~120–150 words).";
+    private const string TodayPromptTemplate = "You are a practical local host. Using {facts} about {address}, in ~90–120 words summarize its current purpose/occupants, public access (hours, tickets, accessibility), photo/etiquette notes, and one nearby tip; if any item isn’t in {facts}, state that it’s unavailable.";
+    private const string KidsPromptTemplate = "You are a playful storyteller for ages 6–10. Using {facts} about {address}, tell a cheerful, simple ~90–110 word story with easy sentences, fun comparisons or sounds, one cool detail from {facts}, no scary content, and end with a question inviting kids to spot a detail when they visit.";
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiStoryService> _logger;

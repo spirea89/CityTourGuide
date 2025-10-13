@@ -1,0 +1,6 @@
+{
+  "googleMapsApiKey": "<insert-your-key>",
+  "googlePlacesApiKey": "<insert-your-key>",
+  "openAiApiKey": "<insert-your-key>",
+  "wikipediaApiKey": ""
+}

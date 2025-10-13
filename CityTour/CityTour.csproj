@@ -86,11 +86,11 @@
 	  </Compile>
 	</ItemGroup>
 
-	<ItemGroup>
-	  <MauiAsset Update="Resources\Raw\api_keys.json">
-	    <CopyToOutputDirectory></CopyToOutputDirectory>
-	  </MauiAsset>
-	</ItemGroup>
+        <ItemGroup>
+          <MauiAsset Update="Resources\Raw\api_keys.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+          </MauiAsset>
+        </ItemGroup>
 
 	<ItemGroup>
           <MauiXaml Update="StoryCanvasPage.xaml">
