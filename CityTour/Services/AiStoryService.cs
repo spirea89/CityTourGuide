@@ -20,6 +20,8 @@ public interface IAiStoryService
         StoryCategory category,
         string? facts = null,
         string? language = null,
+        double? latitude = null,
+        double? longitude = null,
         CancellationToken cancellationToken = default);
 
     Task<string> AskAddressDetailsAsync(
@@ -45,24 +47,26 @@ public class AiStoryService : IAiStoryService
     private const string ModelPreferenceKey = "ai.story.model";
     private const string SystemMessage = AiStorySystemPrompts.Default;
     internal const string RawResponseDataKey = "RawOpenAiResponse";
-    private const string HistoryPromptTemplate = "You are a meticulous local historian. Using only {facts} about {address}, write a vivid, chronological ~120–150 word history highlighting founding date, name changes, 2–3 pivotal events, and significance.";
-    private const string PersonalitiesPromptTemplate = "You are a culturally savvy guide. Using only {facts} on people linked to {address}, craft a ~110–140 word mini-story weaving 2–3 notable figures with full names, dates, roles, and one concrete anecdote each; avoid speculation.";
-    private const string ArchitecturePromptTemplate = "You are an architect explaining to curious visitors. Using only {facts} about {address}, describe its style, architect, era, materials, façade/interior highlights, notable alterations, and 2 street-level details to spot in clear (~120–150 words).";
-    private const string TodayPromptTemplate = "You are a practical local host. Using only {facts} about {address}, in ~90–120 words summarize its current purpose/occupants, public access (hours, tickets, accessibility), photo/etiquette notes, and one nearby tip; if any item isn’t covered, say so plainly.";
-    private const string KidsPromptTemplate = "You are a playful storyteller for ages 6–10. Using only {facts} about {address}, in ~90–110 words tell a cheerful, simple story with easy sentences, fun comparisons or sounds, one cool detail from the facts, no scary content, and end with a question inviting kids to spot something when they visit.";
+    private const string HistoryPromptTemplate = "You are a meticulous local historian. Based on the available information about {building_name} at {address}: {facts}\n\nWrite a vivid, engaging ~120–150 word historical narrative. If you have specific historical details, create a chronological story highlighting founding dates, significant events, and cultural importance. If information is limited, focus on the broader historical context of the location and what makes this place potentially significant to visitors. Use welcoming, informative language that brings the place to life.";
+    private const string PersonalitiesPromptTemplate = "You are a culturally savvy guide. Based on what we know about {building_name} at {address}: {facts}\n\nCraft an engaging ~110–140 word story about notable people connected to this place. If you have specific information about historical figures, weave their stories with dates, roles, and interesting anecdotes. If details are limited, discuss the types of people who might have lived, worked, or gathered here throughout history, connecting to the broader social fabric of the area.";
+    private const string ArchitecturePromptTemplate = "You are an architect explaining to curious visitors. Looking at {building_name} at {address}: {facts}\n\nDescribe the architectural story in ~120–150 words. If you have specific details about style, architect, or construction, highlight those features visitors can observe. If information is limited, guide visitors on what architectural elements to look for based on the building's apparent age, location, and context within the neighborhood. Help them appreciate the visual details they can spot.";
+    private const string TodayPromptTemplate = "You are a practical local host helping visitors explore {building_name} at {address}. Here's what we know: {facts}\n\nIn ~90–120 words, provide useful visitor information. If you have current details about purpose, access, or visiting tips, share those. If information is limited, offer general guidance about approaching and appreciating the building, suggest what visitors might look for, and provide contextual tips for exploring the surrounding area.";
+    private const string KidsPromptTemplate = "You are a fun storyteller for kids aged 6–10 visiting {building_name} at {address}. Here's what we know: {facts}\n\nTell a cheerful ~90–110 word story using simple sentences and fun comparisons. If you have interesting historical details, turn them into an engaging tale. If information is limited, create an imaginative story about what adventures might have happened here long ago, ending with a question that encourages kids to use their imagination when they visit.";
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiStoryService> _logger;
     private readonly IApiKeyProvider _apiKeyProvider;
+    private readonly IBuildingContextService _contextService;
     private string _model;
     private string? _apiKey;
 
-    public AiStoryService(HttpClient httpClient, ILogger<AiStoryService> logger, IApiKeyProvider apiKeyProvider)
+    public AiStoryService(HttpClient httpClient, ILogger<AiStoryService> logger, IApiKeyProvider apiKeyProvider, IBuildingContextService contextService)
     {
         _httpClient = httpClient;
         _httpClient.Timeout = TimeSpan.FromSeconds(60);
         _logger = logger;
         _apiKeyProvider = apiKeyProvider;
+        _contextService = contextService;
         var savedModel = Preferences.Get(ModelPreferenceKey, DefaultModel);
         _model = string.IsNullOrWhiteSpace(savedModel) ? DefaultModel : savedModel.Trim();
     }
@@ -92,6 +96,8 @@ public class AiStoryService : IAiStoryService
         StoryCategory category,
         string? facts = null,
         string? language = null,
+        double? latitude = null,
+        double? longitude = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(buildingName) && string.IsNullOrWhiteSpace(buildingAddress))
@@ -99,7 +105,28 @@ public class AiStoryService : IAiStoryService
             throw new ArgumentException("A building name or address is required.", nameof(buildingName));
         }
 
-        var prompt = BuildStoryPrompt(buildingName, buildingAddress, category, facts, language);
+        // Get enhanced building context by combining existing facts with Wikipedia information
+        BuildingContextResult contextResult;
+        try
+        {
+            _logger.LogDebug("Gathering enhanced context for {BuildingName} at {Address}", buildingName, buildingAddress);
+            contextResult = await _contextService.GetEnhancedContextAsync(
+                buildingName, 
+                buildingAddress, 
+                facts, 
+                latitude: latitude,
+                longitude: longitude, 
+                cancellationToken);
+            
+            _logger.LogDebug("Enhanced context gathered. Has Wikipedia info: {HasWikipedia}", contextResult.HasWikipediaInfo);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to gather enhanced context for {BuildingName}, using existing facts", buildingName);
+            contextResult = new BuildingContextResult(facts ?? "Limited information available", null, null, false);
+        }
+
+        var prompt = BuildStoryPrompt(buildingName, buildingAddress, category, contextResult.EnhancedFacts, language);
         var story = await SendCompletionAsync(prompt, 0.8, 600, "story", cancellationToken);
 
         return new StoryGenerationResult(story, prompt);
@@ -140,7 +167,13 @@ public class AiStoryService : IAiStoryService
 
     private static string ResolveFacts(string? facts)
     {
-        return string.IsNullOrWhiteSpace(facts) ? "unknown" : facts.Trim();
+        if (string.IsNullOrWhiteSpace(facts))
+        {
+            return "Limited information is available about this location.";
+        }
+        
+        var trimmed = facts.Trim();
+        return trimmed.Length > 10 ? trimmed : "Basic location information available.";
     }
 
     private static string ResolveBuildingName(string buildingName, string? buildingAddress)
@@ -160,7 +193,7 @@ public class AiStoryService : IAiStoryService
 
     private static string ResolveAddress(string? buildingAddress)
     {
-        return string.IsNullOrWhiteSpace(buildingAddress) ? "unknown" : buildingAddress.Trim();
+        return string.IsNullOrWhiteSpace(buildingAddress) ? "this location" : buildingAddress.Trim();
     }
 
     private static string ResolveLanguage(string? language)
