@@ -40,10 +40,10 @@ public partial class StoryCanvasPage : ContentPage
     };
     private readonly List<ModelOption> _modelOptions = new()
     {
+        new("GPT-4o", "gpt-4o", "Balanced quality and cost"),
         new("GPT-5", "gpt-5", "Next-generation reasoning and creativity"),
         new("GPT-4.1", "gpt-4.1", "Highest quality responses"),
         new("GPT-4.1 mini", "gpt-4.1-mini", "Smarter reasoning, moderate speed"),
-        new("GPT-4o", "gpt-4o", "Balanced quality and cost"),
         new("GPT-4o mini", "gpt-4o-mini", "Fast and cost-efficient")
     };
     private ModelOption? _selectedModel;
@@ -106,8 +106,6 @@ public partial class StoryCanvasPage : ContentPage
         ChatStatusLabel.Text = ChatReadyStatusMessage;
         SetPromptVisibility(false);
         UpdatePromptPreview();
-
-        StoryEditor.TextChanged += OnStoryTextChanged;
         UpdateAudioControls();
         UpdateChatControls();
     }
@@ -156,16 +154,19 @@ public partial class StoryCanvasPage : ContentPage
                 category,
                 _buildingFacts,
                 _preferredLanguage,
+                _latitude,
+                _longitude,
                 cts.Token);
             cts.Token.ThrowIfCancellationRequested();
 
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                StoryEditor.Text = storyResult.Story;
+                StoryLabel.Text = storyResult.Story;
                 PromptLabel.Text = storyResult.Prompt;
+                UpdateAudioControls();
             });
 
-            await SetStatusAsync($"Story generated with {modelLabel} ({categoryLabel} focus). Feel free to tweak or add your own notes.");
+            await SetStatusAsync($"Story generated with {modelLabel} ({categoryLabel} focus).");
             UpdateRawResponse(null);
         }
         catch (OperationCanceledException)
@@ -498,7 +499,7 @@ public partial class StoryCanvasPage : ContentPage
             await SetChatBusyStateAsync(true, ChatBusyStatusMessage);
 
             var address = GetAddressForStory();
-            var storyText = string.IsNullOrWhiteSpace(StoryEditor.Text) ? null : StoryEditor.Text;
+            var storyText = string.IsNullOrWhiteSpace(StoryLabel.Text) ? null : StoryLabel.Text;
 
             var response = await _storyService.AskAddressDetailsAsync(
                 _buildingName,
@@ -637,14 +638,9 @@ public partial class StoryCanvasPage : ContentPage
         SendChatButton.IsEnabled = !_isChatBusy && hasText;
     }
 
-    private void OnStoryTextChanged(object? sender, TextChangedEventArgs e)
-    {
-        UpdateAudioControls();
-    }
-
     private async void OnListenClicked(object? sender, EventArgs e)
     {
-        var text = StoryEditor.Text;
+        var text = StoryLabel.Text;
         if (string.IsNullOrWhiteSpace(text))
         {
             await DisplayAlert("Story unavailable", "There's no story to read right now.", "OK");
@@ -710,7 +706,7 @@ public partial class StoryCanvasPage : ContentPage
 
     private void UpdateAudioControls()
     {
-        var hasText = !string.IsNullOrWhiteSpace(StoryEditor.Text);
+        var hasText = !string.IsNullOrWhiteSpace(StoryLabel.Text);
         ListenButton.IsEnabled = !_isSpeaking && hasText;
         StopButton.IsEnabled = _isSpeaking;
         VoicePicker.IsEnabled = !_isSpeaking && _voiceOptions.Count > 0;
