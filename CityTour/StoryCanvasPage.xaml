@@ -6,7 +6,7 @@
     xmlns:models="clr-namespace:CityTour.Models"
     Padding="16">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,4*,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
 
         <Label Text="New story"
                FontSize="22"
@@ -73,11 +73,12 @@
                     Clicked="OnShowRawResponseClicked" />
         </Grid>
 
-        <Editor x:Name="StoryEditor"
-                Grid.Row="6"
-                Placeholder="Tweak or add your own notes here..."
-                AutoSize="Disabled"
-                VerticalOptions="FillAndExpand" />
+        <ScrollView Grid.Row="6"
+                    BackgroundColor="Transparent">
+            <Label x:Name="StoryLabel"
+                   LineBreakMode="WordWrap"
+                   TextColor="{AppThemeBinding Light=#111, Dark=#EEE}" />
+        </ScrollView>
 
         <Label Grid.Row="7"
                Text="Ask about this place"
