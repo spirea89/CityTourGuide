@@ -21,6 +21,8 @@ public static class MauiProgram
         builder.Services.AddSingleton<HttpClient>(_ => new HttpClient());
         builder.Services.AddSingleton<IApiKeyProvider, ApiKeyProvider>();
         builder.Services.AddSingleton<Services.PlaceService>();
+        builder.Services.AddSingleton<IWikipediaService, WikipediaService>();
+        builder.Services.AddSingleton<IBuildingContextService, BuildingContextService>();
         builder.Services.AddSingleton<IAiStoryService, AiStoryService>();
         builder.Services.AddSingleton<MainPage>();
         builder.Services.AddTransient<Views.DetailPage>();

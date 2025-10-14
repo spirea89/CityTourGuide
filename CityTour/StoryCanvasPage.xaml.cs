@@ -154,6 +154,8 @@ public partial class StoryCanvasPage : ContentPage
                 category,
                 _buildingFacts,
                 _preferredLanguage,
+                _latitude,
+                _longitude,
                 cts.Token);
             cts.Token.ThrowIfCancellationRequested();
 
