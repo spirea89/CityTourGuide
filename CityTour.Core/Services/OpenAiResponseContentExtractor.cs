@@ -24,8 +24,36 @@ public static class OpenAiResponseContentExtractor
             "metadata",
             "annotations",
             "source",
+            "max_output_tokens",
+            "max_tokens",
+            "temperature",
+            "top_p",
+            "frequency_penalty",
+            "presence_penalty",
+            "stop",
+            "stream",
+            "logprobs",
+            "echo",
+            "n",
+            "best_of",
+            "user",
+            "suffix",
+            "logit_bias",
+            "developer",
+            "medium",
+            "default",
+            "auto",
+            "disabled",
+            "enabled",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "prompt_logprobs",
+            "input_tokens",
+            "output_tokens",
+            "cached_tokens",
         },
-        StringComparer.Ordinal);
+        StringComparer.OrdinalIgnoreCase);
 
     private static readonly string[] PrioritizedPropertyNames =
     {
@@ -46,6 +74,21 @@ public static class OpenAiResponseContentExtractor
 
     public static string? TryExtractCompletionContent(JsonElement root)
     {
+        // Try standard OpenAI chat completion response format first
+        var standardContent = TryExtractStandardChatResponse(root);
+        if (!string.IsNullOrWhiteSpace(standardContent))
+        {
+            return standardContent;
+        }
+
+        // Try GPT-5 responses endpoint format
+        var responsesContent = TryExtractResponsesEndpointFormat(root);
+        if (!string.IsNullOrWhiteSpace(responsesContent))
+        {
+            return responsesContent;
+        }
+
+        // Fallback to generic extraction
         var paragraphs = new List<string>();
         var reasoningFallback = new List<string>();
         CollectText(root, paragraphs, reasoningFallback, null);
@@ -56,6 +99,82 @@ public static class OpenAiResponseContentExtractor
         }
 
         return reasoningFallback.Count == 0 ? null : string.Join("\n\n", reasoningFallback);
+    }
+
+    private static string? TryExtractStandardChatResponse(JsonElement root)
+    {
+        // Standard format: { "choices": [{ "message": { "content": "text" } }] }
+        if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var choice in choices.EnumerateArray())
+            {
+                if (choice.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object)
+                {
+                    if (message.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
+                    {
+                        var text = content.GetString();
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            return text.Trim();
+                        }
+                    }
+                }
+                
+                // Also try direct text property in choice
+                if (choice.TryGetProperty("text", out var choiceText) && choiceText.ValueKind == JsonValueKind.String)
+                {
+                    var text = choiceText.GetString();
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text.Trim();
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryExtractResponsesEndpointFormat(JsonElement root)
+    {
+        // GPT-5 responses format - may have different structure
+        if (root.TryGetProperty("output", out var output))
+        {
+            if (output.ValueKind == JsonValueKind.String)
+            {
+                var text = output.GetString();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text.Trim();
+                }
+            }
+            else if (output.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in output.EnumerateArray())
+                {
+                    if (item.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
+                    {
+                        var text = content.GetString();
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            return text.Trim();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try other possible response formats
+        if (root.TryGetProperty("text", out var directText) && directText.ValueKind == JsonValueKind.String)
+        {
+            var text = directText.GetString();
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text.Trim();
+            }
+        }
+
+        return null;
     }
 
     private static void CollectText(

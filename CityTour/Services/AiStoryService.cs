@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -314,11 +315,18 @@ public class AiStoryService : IAiStoryService
             using var doc = JsonDocument.Parse(responseBody);
             var root = doc.RootElement;
 
+            _logger.LogDebug("OpenAI response received, attempting to extract content from: {ResponseKeys}", 
+                string.Join(", ", root.EnumerateObject().Select(p => p.Name)));
+
             var completionContent = OpenAiResponseContentExtractor.TryExtractCompletionContent(root);
             if (!string.IsNullOrWhiteSpace(completionContent))
             {
+                _logger.LogDebug("Successfully extracted content of length: {Length}", completionContent.Length);
                 return completionContent.Trim();
             }
+
+            _logger.LogWarning("Failed to extract content from OpenAI response. Response structure: {Response}", 
+                responseBody.Length > 1000 ? responseBody.Substring(0, 1000) + "..." : responseBody);
 
             if (TryBuildIncompleteResponseMessage(root, failureContext, out var friendlyMessage))
             {
