@@ -140,7 +140,8 @@ public class AiStoryService : IAiStoryService
         }
 
         var prompt = BuildStoryPrompt(buildingName, buildingAddress, category, contextResult.EnhancedFacts, language);
-        var story = await SendCompletionAsync(prompt, 0.8, 600, "story", cancellationToken);
+        var maxTokens = IsGpt5Model(_model) ? 1500 : 600; // GPT-5 needs more tokens due to reasoning
+        var story = await SendCompletionAsync(prompt, 0.8, maxTokens, "story", cancellationToken);
 
         return new StoryGenerationResult(story, prompt);
     }
@@ -271,6 +272,11 @@ public class AiStoryService : IAiStoryService
         return string.IsNullOrWhiteSpace(text) ? "English" : text;
     }
 
+    private static bool IsGpt5Model(string model)
+    {
+        return model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
+    }
+
     public async Task<string> AskAddressDetailsAsync(
         string buildingName,
         string? buildingAddress,
@@ -289,7 +295,8 @@ public class AiStoryService : IAiStoryService
         }
 
         var prompt = BuildFollowUpPrompt(buildingName, buildingAddress, currentStory, question);
-        return await SendCompletionAsync(prompt, 0.7, 400, "follow-up answer", cancellationToken);
+        var maxTokens = IsGpt5Model(_model) ? 800 : 400; // GPT-5 needs more tokens due to reasoning
+        return await SendCompletionAsync(prompt, 0.7, maxTokens, "follow-up answer", cancellationToken);
     }
 
     private string BuildFollowUpPrompt(

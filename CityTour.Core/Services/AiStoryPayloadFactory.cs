@@ -59,9 +59,9 @@ public static class AiStoryPayloadFactory
             payload["temperature"] = temperature;
         }
 
-        if (RequiresMaxOutputTokens(model))
+        if (RequiresMaxCompletionTokens(model))
         {
-            payload["max_output_tokens"] = maxTokens;
+            payload["max_completion_tokens"] = maxTokens;
         }
         else
         {
@@ -81,7 +81,7 @@ public static class AiStoryPayloadFactory
         return !IsGpt5Model(model);
     }
 
-    private static bool RequiresMaxOutputTokens(string model)
+    private static bool RequiresMaxCompletionTokens(string model)
     {
         return IsGpt5Model(model);
     }

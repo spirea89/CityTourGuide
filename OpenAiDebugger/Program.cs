@@ -45,7 +45,7 @@ class Program
         }
 
         Console.WriteLine($"\nTesting story generation for: {buildingName} at {address}");
-        Console.WriteLine("Using model: gpt-4o");
+        Console.WriteLine("Using model: gpt-5");
 
         // Build the prompt (simplified version of the app's prompt)
         var prompt = $@"You are a meticulous local historian. Based on the available information about {buildingName} at {address}: Limited information is available about this location.
@@ -59,14 +59,13 @@ Write a vivid, engaging ~120–150 word historical narrative. If you have specif
         // Create the request payload
         var payload = new
         {
-            model = "gpt-4o",
+            model = "gpt-5",
             messages = new[]
             {
                 new { role = "system", content = "You are a creative, historically knowledgeable city tour guide. Craft short stories and responses about buildings that feel authentic, welcoming, and vivid." },
                 new { role = "user", content = prompt }
             },
-            temperature = 0.8,
-            max_tokens = 600
+            max_completion_tokens = 1500
         };
 
         var jsonPayload = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
