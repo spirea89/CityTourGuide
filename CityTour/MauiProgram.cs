@@ -23,6 +23,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<Services.PlaceService>();
         builder.Services.AddSingleton<IWikipediaService, WikipediaService>();
         builder.Services.AddSingleton<IBuildingContextService, BuildingContextService>();
+        builder.Services.AddSingleton<IFactCheckService, FactCheckService>();
         builder.Services.AddSingleton<IAiStoryService, AiStoryService>();
         builder.Services.AddSingleton<MainPage>();
         builder.Services.AddTransient<Views.DetailPage>();

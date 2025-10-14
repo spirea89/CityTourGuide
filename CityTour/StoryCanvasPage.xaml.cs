@@ -61,6 +61,7 @@ public partial class StoryCanvasPage : ContentPage
     private const string ChatFollowUpStatusMessage = "Ask another follow-up question whenever you're curious.";
     private string? _lastRawOpenAiResponse;
     private bool _isPromptVisible;
+    private FactCheckSummary? _currentFactCheck;
 
     public StoryCanvasPage(
         string placeId,
@@ -148,7 +149,7 @@ public partial class StoryCanvasPage : ContentPage
             await ToggleLoadingAsync(true, userInitiated, categoryLabel, modelLabel);
 
             var addressForStory = GetAddressForStory();
-            var storyResult = await _storyService.GenerateStoryAsync(
+            var storyResult = await _storyService.GenerateStoryWithFactCheckAsync(
                 _buildingName,
                 addressForStory,
                 category,
@@ -163,7 +164,9 @@ public partial class StoryCanvasPage : ContentPage
             {
                 StoryLabel.Text = storyResult.Story;
                 PromptLabel.Text = storyResult.Prompt;
+                _currentFactCheck = storyResult.FactCheck;
                 UpdateAudioControls();
+                UpdateFactCheckDisplay();
             });
 
             await SetStatusAsync($"Story generated with {modelLabel} ({categoryLabel} focus).");
@@ -455,6 +458,129 @@ public partial class StoryCanvasPage : ContentPage
         _isPromptVisible = isVisible;
         PromptLabel.IsVisible = isVisible;
         TogglePromptButton.Text = isVisible ? "Hide prompt" : "Show prompt";
+    }
+
+    private void UpdateFactCheckDisplay()
+    {
+        if (_currentFactCheck == null)
+        {
+            // Hide fact-check button if no data
+            FactCheckButton.IsVisible = false;
+            return;
+        }
+
+        // Show fact-check button with updated text
+        FactCheckButton.IsVisible = true;
+        
+        // Update button text with basic info
+        var verifiedCount = _currentFactCheck.VerifiedFacts.Count;
+        var unverifiedCount = _currentFactCheck.UnverifiedClaims.Count;
+        
+        if (verifiedCount > 0 || unverifiedCount > 0)
+        {
+            FactCheckButton.Text = $"📊 Fact check ({verifiedCount}✅ {unverifiedCount}❓)";
+        }
+        else
+        {
+            FactCheckButton.Text = "📊 View fact check";
+        }
+
+        // Change button color based on fact-check quality
+        if (_currentFactCheck.HasMajorInaccuracies)
+        {
+            FactCheckButton.BackgroundColor = Color.FromArgb("#FFEBEE"); // Light red
+            FactCheckButton.TextColor = Color.FromArgb("#C62828"); // Dark red
+        }
+        else if (verifiedCount > unverifiedCount)
+        {
+            FactCheckButton.BackgroundColor = Color.FromArgb("#E8F5E8"); // Light green
+            FactCheckButton.TextColor = Color.FromArgb("#2E7D32"); // Dark green
+        }
+        else
+        {
+            // Default blue color
+            FactCheckButton.BackgroundColor = Color.FromArgb("#E3F2FD");
+            FactCheckButton.TextColor = Color.FromArgb("#1976D2");
+        }
+    }
+
+    private async void OnShowFactCheckClicked(object? sender, EventArgs e)
+    {
+        if (_currentFactCheck == null)
+        {
+            await DisplayAlert("Fact Check", "No fact-check information available.", "OK");
+            return;
+        }
+
+        var factCheckSummary = BuildFactCheckSummary(_currentFactCheck);
+        await DisplayAlert("Story Fact Check", factCheckSummary, "OK");
+    }
+
+    private static string BuildFactCheckSummary(FactCheckSummary factCheck)
+    {
+        var summary = new System.Text.StringBuilder();
+        
+        // Overall assessment
+        summary.AppendLine($"📊 OVERALL ASSESSMENT");
+        summary.AppendLine(factCheck.OverallAssessment);
+        summary.AppendLine();
+
+        // Verified facts
+        if (factCheck.VerifiedFacts.Count > 0)
+        {
+            summary.AppendLine($"✅ VERIFIED FACTS ({factCheck.VerifiedFacts.Count}):");
+            foreach (var fact in factCheck.VerifiedFacts.Take(3)) // Show top 3
+            {
+                summary.AppendLine($"• {fact.Claim}");
+                if (!string.IsNullOrWhiteSpace(fact.Evidence))
+                {
+                    summary.AppendLine($"  Evidence: {fact.Evidence}");
+                }
+            }
+            if (factCheck.VerifiedFacts.Count > 3)
+            {
+                summary.AppendLine($"  ... and {factCheck.VerifiedFacts.Count - 3} more verified facts");
+            }
+            summary.AppendLine();
+        }
+
+        // Unverified claims
+        if (factCheck.UnverifiedClaims.Count > 0)
+        {
+            summary.AppendLine($"❓ UNVERIFIED CLAIMS ({factCheck.UnverifiedClaims.Count}):");
+            foreach (var claim in factCheck.UnverifiedClaims.Take(3)) // Show top 3
+            {
+                summary.AppendLine($"• {claim.Claim}");
+                if (!string.IsNullOrWhiteSpace(claim.Evidence))
+                {
+                    summary.AppendLine($"  Note: {claim.Evidence}");
+                }
+            }
+            if (factCheck.UnverifiedClaims.Count > 3)
+            {
+                summary.AppendLine($"  ... and {factCheck.UnverifiedClaims.Count - 3} more unverified claims");
+            }
+            summary.AppendLine();
+        }
+
+        // Contextual information
+        if (factCheck.ContextualInfo.Count > 0)
+        {
+            summary.AppendLine($"ℹ️ CONTEXTUAL NOTES ({factCheck.ContextualInfo.Count}):");
+            foreach (var info in factCheck.ContextualInfo.Take(2)) // Show top 2
+            {
+                summary.AppendLine($"• {info.Claim}");
+            }
+            summary.AppendLine();
+        }
+
+        // Warning for major inaccuracies
+        if (factCheck.HasMajorInaccuracies)
+        {
+            summary.AppendLine("⚠️ This story contains potentially inaccurate information. Please verify important details independently.");
+        }
+
+        return summary.ToString();
     }
 
     private void OnSendChatClicked(object? sender, EventArgs e)

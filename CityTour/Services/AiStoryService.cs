@@ -25,6 +25,16 @@ public interface IAiStoryService
         double? longitude = null,
         CancellationToken cancellationToken = default);
 
+    Task<StoryFactCheckResult> GenerateStoryWithFactCheckAsync(
+        string buildingName,
+        string? buildingAddress,
+        StoryCategory category,
+        string? facts = null,
+        string? language = null,
+        double? latitude = null,
+        double? longitude = null,
+        CancellationToken cancellationToken = default);
+
     Task<string> AskAddressDetailsAsync(
         string buildingName,
         string? buildingAddress,
@@ -58,16 +68,18 @@ public class AiStoryService : IAiStoryService
     private readonly ILogger<AiStoryService> _logger;
     private readonly IApiKeyProvider _apiKeyProvider;
     private readonly IBuildingContextService _contextService;
+    private readonly IFactCheckService _factCheckService;
     private string _model;
     private string? _apiKey;
 
-    public AiStoryService(HttpClient httpClient, ILogger<AiStoryService> logger, IApiKeyProvider apiKeyProvider, IBuildingContextService contextService)
+    public AiStoryService(HttpClient httpClient, ILogger<AiStoryService> logger, IApiKeyProvider apiKeyProvider, IBuildingContextService contextService, IFactCheckService factCheckService)
     {
         _httpClient = httpClient;
         _httpClient.Timeout = TimeSpan.FromSeconds(60);
         _logger = logger;
         _apiKeyProvider = apiKeyProvider;
         _contextService = contextService;
+        _factCheckService = factCheckService;
         var savedModel = Preferences.Get(ModelPreferenceKey, DefaultModel);
         _model = string.IsNullOrWhiteSpace(savedModel) ? DefaultModel : savedModel.Trim();
     }
@@ -131,6 +143,51 @@ public class AiStoryService : IAiStoryService
         var story = await SendCompletionAsync(prompt, 0.8, 600, "story", cancellationToken);
 
         return new StoryGenerationResult(story, prompt);
+    }
+
+    public async Task<StoryFactCheckResult> GenerateStoryWithFactCheckAsync(
+        string buildingName,
+        string? buildingAddress,
+        StoryCategory category,
+        string? facts = null,
+        string? language = null,
+        double? latitude = null,
+        double? longitude = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(buildingName) && string.IsNullOrWhiteSpace(buildingAddress))
+        {
+            throw new ArgumentException("A building name or address is required.", nameof(buildingName));
+        }
+
+        // Generate the story first
+        var storyResult = await GenerateStoryAsync(buildingName, buildingAddress, category, facts, language, latitude, longitude, cancellationToken);
+
+        // Then fact-check it
+        FactCheckSummary factCheck;
+        try
+        {
+            _logger.LogDebug("Starting fact-check for story about {BuildingName}", buildingName);
+            factCheck = await _factCheckService.VerifyStoryAsync(storyResult.Story, buildingName, buildingAddress, cancellationToken);
+            _logger.LogDebug("Fact-check completed for {BuildingName}", buildingName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fact-check failed for {BuildingName}, returning story without fact-check", buildingName);
+            
+            // Return a basic fact-check result if the service fails
+            factCheck = new FactCheckSummary(
+                new List<FactCheckItem>(),
+                new List<FactCheckItem> 
+                { 
+                    new("Fact-checking service unavailable", FactCheckStatus.Uncertain, $"Error: {ex.Message}", "System") 
+                },
+                new List<FactCheckItem>(),
+                false,
+                "Fact-checking could not be completed due to technical issues.");
+        }
+
+        return new StoryFactCheckResult(storyResult.Story, storyResult.Prompt, factCheck);
     }
 
     public string BuildStoryPrompt(

@@ -6,7 +6,7 @@
     xmlns:models="clr-namespace:CityTour.Models"
     Padding="16">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
 
         <Label Text="New story"
                FontSize="22"
@@ -181,7 +181,14 @@
                 Text="Regenerate story"
                 Clicked="OnRegenerateClicked" />
 
-        <Button Grid.Row="14"
+        <Button x:Name="FactCheckButton"
+                Grid.Row="14"
+                Text="📊 View fact check"
+                Clicked="OnShowFactCheckClicked"
+                BackgroundColor="{AppThemeBinding Light=#E3F2FD, Dark=#1E3A5F}"
+                TextColor="{AppThemeBinding Light=#1976D2, Dark=#90CAF9}" />
+
+        <Button Grid.Row="15"
                 Text="Close"
                 Clicked="OnCloseClicked" />
     </Grid>
