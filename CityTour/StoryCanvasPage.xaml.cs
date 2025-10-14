@@ -33,8 +33,6 @@ public partial class StoryCanvasPage : ContentPage
     private readonly List<StoryCategoryOption> _categoryOptions = new()
     {
         new("History", StoryCategory.History),
-        new("Personalities", StoryCategory.Personalities),
-        new("Architecture", StoryCategory.Architecture),
         new("Today", StoryCategory.Today),
         new("Kids", StoryCategory.Kids)
     };
