@@ -1,0 +1,224 @@
+﻿@page "/"
+@using CityTour.Services
+@using CityTour.Models
+@using Microsoft.Extensions.Logging
+@inject IAiStoryService StoryService
+@inject ILogger<Home> Logger
+@inject IJSRuntime JSRuntime
+
+<PageTitle>City Tour Guide</PageTitle>
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="display-4 text-center mb-4">🏛️ City Tour Guide</h1>
+            <p class="lead text-center mb-5">Discover the stories behind buildings and landmarks</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="card-title mb-0">📖 Story Generator</h3>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="storyRequest" OnValidSubmit="GenerateStory">
+                        <DataAnnotationsValidator />
+
+                        <div class="mb-3">
+                            <label for="buildingName" class="form-label">Building Name *</label>
+                            <InputText id="buildingName" class="form-control" @bind-Value="storyRequest.BuildingName" placeholder="e.g., Schönbrunn Palace" />
+                            <ValidationMessage For="@(() => storyRequest.BuildingName)" class="text-danger" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="buildingAddress" class="form-label">Address (Optional)</label>
+                            <InputText id="buildingAddress" class="form-control" @bind-Value="storyRequest.BuildingAddress" placeholder="e.g., Schönbrunn, 1130 Wien" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="category" class="form-label">Story Type</label>
+                            <InputSelect id="category" class="form-select" @bind-Value="storyRequest.Category">
+                                <option value="@StoryCategory.History">📚 History - Comprehensive historical narrative</option>
+                                <option value="@StoryCategory.Today">🏛️ Today - Practical visitor information</option>
+                                <option value="@StoryCategory.Kids">🧸 Kids - Fun story for 7-year-olds</option>
+                            </InputSelect>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="model" class="form-label">AI Model</label>
+                            <InputSelect id="model" class="form-select" @bind-Value="storyRequest.Model">
+                                <option value="gpt-4o">GPT-4o (Recommended)</option>
+                                <option value="gpt-4.1">GPT-4.1 (Highest Quality)</option>
+                                <option value="gpt-4.1-mini">GPT-4.1 Mini (Smart & Fast)</option>
+                                <option value="gpt-4o-mini">GPT-4o Mini (Cost Efficient)</option>
+                                <option value="gpt-5">GPT-5 (Experimental)</option>
+                            </InputSelect>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="language" class="form-label">Language (Optional)</label>
+                            <InputText id="language" class="form-control" @bind-Value="storyRequest.Language" placeholder="e.g., English, German, Spanish" />
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg" disabled="@isLoading">
+                                @if (isLoading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                    <span>Generating Story...</span>
+                                }
+                                else
+                                {
+                                    <span>🎭 Generate Story</span>
+                                }
+                            </button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(currentStory))
+            {
+                <div class="card mt-4 shadow">
+                    <div class="card-header bg-success text-white">
+                        <h4 class="card-title mb-0">📖 Generated Story</h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="story-content">
+                            @currentStory
+                        </div>
+                        
+                        @if (factCheckResult != null)
+                        {
+                            <div class="mt-3">
+                                <button class="btn btn-outline-info btn-sm" @onclick="ShowFactCheck">
+                                    🔍 View Fact Check
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger mt-4" role="alert">
+                    <h5>⚠️ Error</h5>
+                    <p>@errorMessage</p>
+                </div>
+            }
+
+            @if (showFactCheck && factCheckResult != null)
+            {
+                <div class="card mt-4 shadow">
+                    <div class="card-header bg-info text-white">
+                        <h4 class="card-title mb-0">🔍 Fact Check Results</h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="fact-check-summary">
+                            <h6>Overall Assessment:</h6>
+                            <p class="mb-3">@factCheckResult.FactCheck.OverallAssessment</p>
+                            
+                            @if (factCheckResult.FactCheck.VerifiedFacts.Any())
+                            {
+                                <h6 class="text-success">✅ Verified Facts (@factCheckResult.FactCheck.VerifiedFacts.Count):</h6>
+                                <ul class="list-group list-group-flush mb-3">
+                                    @foreach (var fact in factCheckResult.FactCheck.VerifiedFacts)
+                                    {
+                                        <li class="list-group-item">@fact.Claim</li>
+                                    }
+                                </ul>
+                            }
+
+                            @if (factCheckResult.FactCheck.UnverifiedClaims.Any())
+                            {
+                                <h6 class="text-warning">⚠️ Unverified Claims (@factCheckResult.FactCheck.UnverifiedClaims.Count):</h6>
+                                <ul class="list-group list-group-flush mb-3">
+                                    @foreach (var claim in factCheckResult.FactCheck.UnverifiedClaims)
+                                    {
+                                        <li class="list-group-item">@claim.Claim</li>
+                                    }
+                                </ul>
+                            }
+
+                            @if (factCheckResult.FactCheck.ContextualInfo.Any())
+                            {
+                                <h6 class="text-info">ℹ️ Contextual Information (@factCheckResult.FactCheck.ContextualInfo.Count):</h6>
+                                <ul class="list-group list-group-flush">
+                                    @foreach (var info in factCheckResult.FactCheck.ContextualInfo)
+                                    {
+                                        <li class="list-group-item">@info.Claim</li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private StoryRequest storyRequest = new();
+    private string currentStory = string.Empty;
+    private string errorMessage = string.Empty;
+    private bool isLoading = false;
+    private bool showFactCheck = false;
+    private StoryFactCheckResult? factCheckResult;
+
+    public class StoryRequest
+    {
+        public string BuildingName { get; set; } = string.Empty;
+        public string BuildingAddress { get; set; } = string.Empty;
+        public StoryCategory Category { get; set; } = StoryCategory.History;
+        public string Model { get; set; } = "gpt-4o";
+        public string Language { get; set; } = string.Empty;
+    }
+
+    private async Task GenerateStory()
+    {
+        if (string.IsNullOrWhiteSpace(storyRequest.BuildingName))
+            return;
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        currentStory = string.Empty;
+        showFactCheck = false;
+        factCheckResult = null;
+
+        try
+        {
+            // Set the model in the service
+            StoryService.SetModel(storyRequest.Model);
+
+            // Generate story with fact checking
+            factCheckResult = await StoryService.GenerateStoryWithFactCheckAsync(
+                storyRequest.BuildingName,
+                string.IsNullOrWhiteSpace(storyRequest.BuildingAddress) ? null : storyRequest.BuildingAddress,
+                storyRequest.Category,
+                language: string.IsNullOrWhiteSpace(storyRequest.Language) ? null : storyRequest.Language
+            );
+
+            currentStory = factCheckResult.Story;
+            
+            Logger.LogInformation("Story generated successfully for {BuildingName}", storyRequest.BuildingName);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            Logger.LogError(ex, "Failed to generate story for {BuildingName}", storyRequest.BuildingName);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ShowFactCheck()
+    {
+        showFactCheck = !showFactCheck;
+    }
+}

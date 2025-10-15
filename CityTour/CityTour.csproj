@@ -75,6 +75,7 @@
 
         <ItemGroup>
           <ProjectReference Include="..\CityTour.Core\CityTour.Core.csproj" />
+          <ProjectReference Include="..\CityTour.Shared\CityTour.Shared.csproj" />
         </ItemGroup>
 
         <ItemGroup>
@@ -106,16 +107,16 @@
             <_SplashScreens Include="@(MauiSplashScreen)">
               <ShortName Condition="$([System.String]::Copy('%(Filename)').Length) &gt;= 2">$([System.String]::Copy('%(Filename)').Substring(0, 2))</ShortName>
             </_SplashScreens>
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-mdpi')" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-hdpi')" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xhdpi')" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xxhdpi')" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xxxhdpi')" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-mdpi')" Condition="'%(ShortName)' != ''" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-hdpi')" Condition="'%(ShortName)' != ''" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-xhdpi')" Condition="'%(ShortName)' != ''" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-xxhdpi')" Condition="'%(ShortName)' != ''" />
-            <_SplashDirectories Include="@(_SplashScreens-&gt;'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-xxxhdpi')" Condition="'%(ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens->'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-mdpi')" />
+            <_SplashDirectories Include="@(_SplashScreens->'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-hdpi')" />
+            <_SplashDirectories Include="@(_SplashScreens->'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xhdpi')" />
+            <_SplashDirectories Include="@(_SplashScreens->'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xxhdpi')" />
+            <_SplashDirectories Include="@(_SplashScreens->'$(IntermediateOutputPath)resizetizer\\%(Filename)\\drawable-xxxhdpi')" />
+            <_SplashDirectories Include="@(_SplashScreens->'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-mdpi')" Condition="'%(ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens->'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-hdpi')" Condition="'%(ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens->'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-xhdpi')" Condition="'%(ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens->'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-xxhdpi')" Condition="'%(ShortName)' != ''" />
+            <_SplashDirectories Include="@(_SplashScreens->'$(IntermediateOutputPath)resizetizer\\%(ShortName)\\drawable-xxxhdpi')" Condition="'%(ShortName)' != ''" />
           </ItemGroup>
           <MakeDir Directories="@(_SplashDirectories)" />
         </Target>
