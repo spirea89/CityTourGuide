@@ -350,7 +350,6 @@ public class AiStoryService : IAiStoryService
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
 
         var jsonContent = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
-
         request.Content = jsonContent;
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
