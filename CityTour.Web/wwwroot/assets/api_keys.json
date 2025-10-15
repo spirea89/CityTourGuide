@@ -1,0 +1,6 @@
+{
+  "googleMapsApiKey": "test",
+  "googlePlacesApiKey": "test",
+  "openAiApiKey": "test",
+  "wikipediaApiKey": "test.test"
+}
